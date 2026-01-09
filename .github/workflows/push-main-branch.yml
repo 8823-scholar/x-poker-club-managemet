@@ -1,0 +1,60 @@
+name: Push Empty Main Branch
+
+# This workflow can be manually triggered to push the empty main branch to remote
+# Run this once after merging the PR that creates the local main branch
+
+on:
+  workflow_dispatch: # Allows manual triggering from GitHub UI
+
+jobs:
+  push-main-branch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required to push to repository
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history for all branches
+      
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      
+      - name: Check if main branch exists locally
+        id: check-main
+        run: |
+          if git show-ref --verify --quiet refs/heads/main; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "✅ Main branch exists locally"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "❌ Main branch does not exist locally"
+          fi
+      
+      - name: Create empty main branch if it doesn't exist
+        if: steps.check-main.outputs.exists == 'false'
+        run: |
+          echo "Creating empty main branch..."
+          git checkout --orphan main
+          git rm -rf --cached . 2>/dev/null || true
+          git commit --allow-empty -m "Initial empty commit for main branch"
+      
+      - name: Push main branch to remote
+        run: |
+          echo "Pushing main branch to remote..."
+          git push -u origin main
+          echo "✅ Successfully pushed empty main branch to remote"
+      
+      - name: Verify main branch
+        run: |
+          echo "Verifying main branch..."
+          git ls-remote --heads origin main
+          echo ""
+          echo "Main branch details:"
+          git log main --oneline -1
+          echo ""
+          echo "Files in main branch:"
+          git ls-tree -r main || echo "(empty - no files)"
