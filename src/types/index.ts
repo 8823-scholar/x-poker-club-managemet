@@ -1,0 +1,71 @@
+/**
+ * Excelメタデータ
+ */
+export interface ExcelMetadata {
+  /** 期間開始日 */
+  periodStart: Date;
+  /** 期間終了日 */
+  periodEnd: Date;
+  /** タイムゾーン */
+  timezone: string;
+  /** エクスポート実行ユーザーID */
+  exportedBy: string;
+  /** クラブ名 */
+  clubName: string;
+  /** クラブID */
+  clubId: string;
+}
+
+/**
+ * プレーヤー行データ
+ */
+export interface PlayerRow {
+  /** ニックネーム */
+  nickname: string;
+  /** プレーヤーID */
+  playerId: string;
+  /** リマーク（備考） */
+  remark: string;
+  /** エージェント名 */
+  agentName: string | null;
+  /** エージェントID */
+  agentId: string | null;
+  /** Super Agent名 */
+  superAgentName: string | null;
+  /** Super Agent ID */
+  superAgentId: string | null;
+  /** 国/地域 */
+  country: string;
+  /** プレーヤー収益合計 */
+  playerRevenueTotal: number | null;
+  /** クラブレーキ合計 */
+  clubRevenueTotal: number | null;
+}
+
+/**
+ * Excelパース結果
+ */
+export interface ParsedExcelData {
+  /** メタデータ */
+  metadata: ExcelMetadata;
+  /** プレーヤーデータ */
+  players: PlayerRow[];
+}
+
+/**
+ * 設定
+ */
+export interface Config {
+  google: {
+    /** サービスアカウントキー（Base64エンコード） */
+    serviceAccountKey: string;
+    /** スプレッドシートID */
+    spreadsheetId: string;
+  };
+  notion?: {
+    /** Notion APIキー */
+    apiKey: string;
+    /** データベースID */
+    databaseId: string;
+  };
+}

@@ -25,3 +25,10 @@ yarn-error.log*
 
 # Test coverage
 coverage/
+
+# Claude Code
+.claude/
+
+# Data files
+*.xlsx
+*.xls
