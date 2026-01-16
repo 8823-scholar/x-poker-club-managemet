@@ -79,7 +79,10 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
         // Dry-runモード: 現在のプロパティと必要なプロパティを比較
         const existingProps = await getDatabaseProperties(notion, db.id);
         const existingNames = new Set(Object.keys(existingProps));
-        const requiredNames = Object.keys(db.schema);
+        // タイトルプロパティは追加できないので除外
+        const requiredNames = Object.keys(db.schema).filter(
+          (name) => !('title' in (db.schema as Record<string, Record<string, unknown>>)[name])
+        );
 
         const missing = requiredNames.filter((name) => !existingNames.has(name));
         const existing = requiredNames.filter((name) => existingNames.has(name));

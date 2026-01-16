@@ -92,6 +92,13 @@ export async function ensureDatabaseProperties(
   const propertiesToAdd: Record<string, unknown> = {};
 
   for (const [propName, propConfig] of Object.entries(requiredSchema)) {
+    // タイトルプロパティはデータベース作成時に自動で作成されるためスキップ
+    const isTitle = 'title' in (propConfig as Record<string, unknown>);
+    if (isTitle) {
+      existing.push(propName);
+      continue;
+    }
+
     if (existingNames.has(propName)) {
       existing.push(propName);
     } else {
