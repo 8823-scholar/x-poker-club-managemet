@@ -27,7 +27,9 @@ export function loadConfig(): Config {
     notion: process.env.NOTION_API_KEY
       ? {
           apiKey: process.env.NOTION_API_KEY,
-          databaseId: process.env.NOTION_DATABASE_ID || '',
+          agentDbId: process.env.NOTION_AGENT_DB_ID || '',
+          weeklySummaryDbId: process.env.NOTION_WEEKLY_SUMMARY_DB_ID || '',
+          weeklyDetailDbId: process.env.NOTION_WEEKLY_DETAIL_DB_ID || '',
         }
       : undefined,
   };

@@ -83,7 +83,11 @@ export interface Config {
   notion?: {
     /** Notion APIキー */
     apiKey: string;
-    /** データベースID */
-    databaseId: string;
+    /** エージェントDBのID */
+    agentDbId: string;
+    /** 週次集金まとめDBのID */
+    weeklySummaryDbId: string;
+    /** 週次集金個別DBのID */
+    weeklyDetailDbId: string;
   };
 }
