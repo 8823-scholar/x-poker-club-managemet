@@ -3,9 +3,11 @@ import {
   createSheetsClient,
   getAvailableWeekPeriods,
   readWeeklyData,
+  readPlayerRakebackRates,
   appendCollectionData,
   COLLECTION_HEADERS,
   WeeklyPlayerData,
+  createPlayerKey,
 } from '../lib/google-sheets.js';
 import { loadConfig, logger } from '../lib/utils.js';
 
@@ -28,6 +30,9 @@ interface AgentSummary {
     nickname: string;
     playerId: string;
     revenuePoints: number;
+    clubRake: number;
+    rakebackRate: number;
+    rakeback: number;
     revenueYen: number;
   }[];
   totalPayment: number; // 支払合計（プラス収益の合計）
@@ -38,7 +43,10 @@ interface AgentSummary {
 /**
  * プレーヤーデータをエージェント毎にグループ化
  */
-function groupByAgent(players: WeeklyPlayerData[]): AgentSummary[] {
+function groupByAgent(
+  players: WeeklyPlayerData[],
+  rakebackRates: Map<string, number>
+): AgentSummary[] {
   const agentMap = new Map<string, AgentSummary>();
 
   for (const player of players) {
@@ -58,17 +66,30 @@ function groupByAgent(players: WeeklyPlayerData[]): AgentSummary[] {
 
     const agent = agentMap.get(agentKey)!;
     const revenuePoints = player.playerRevenue;
-    const revenueYen = revenuePoints * 100;
+    const clubRake = player.clubRake;
+
+    // プレイヤーのレーキバックレートを取得（デフォルト: 0）
+    const playerKey = createPlayerKey(player.playerId, player.agentId || '');
+    const rakebackRate = rakebackRates.get(playerKey) || 0;
+
+    // レーキバック = レーキ × レーキバックレート（小数点以下2桁で切り上げ）
+    const rakeback = Math.ceil(clubRake * rakebackRate * 100) / 100;
+
+    // 金額 = (収益 + レーキバック) × 100
+    const revenueYen = (revenuePoints + rakeback) * 100;
 
     agent.players.push({
       nickname: player.nickname,
       playerId: player.playerId,
       revenuePoints,
+      clubRake,
+      rakebackRate,
+      rakeback,
       revenueYen,
     });
 
     // 集計
-    if (revenuePoints > 0) {
+    if (revenueYen > 0) {
       agent.totalPayment += revenueYen;
     } else {
       agent.totalCollection += Math.abs(revenueYen);
@@ -109,6 +130,9 @@ function buildCollectionData(
         player.nickname,
         player.playerId,
         String(player.revenuePoints),
+        String(player.clubRake),
+        String(player.rakebackRate),
+        String(player.rakeback),
         String(player.revenueYen),
       ]);
     }
@@ -175,22 +199,34 @@ async function runCollect(
 
     logger.info(`プレーヤー数: ${weeklyData.length}名`);
 
-    // 6. エージェント毎にグループ化
-    const agents = groupByAgent(weeklyData);
+    // 6. プレイヤーデータからレーキバックレートを取得
+    const rakebackRates = await readPlayerRakebackRates(
+      sheets,
+      config.google.spreadsheetId,
+      'プレイヤーデータ'
+    );
+    logger.info(`レーキバックレート登録数: ${rakebackRates.size}件`);
+
+    // 7. エージェント毎にグループ化
+    const agents = groupByAgent(weeklyData, rakebackRates);
     logger.info(`エージェント数: ${agents.length}グループ`);
 
-    // 7. 集金データを生成
+    // 8. 集金データを生成
     const collectionData = buildCollectionData(targetPeriod, agents);
 
-    // 8. Dry-runモードの場合は結果を表示して終了
+    // 9. Dry-runモードの場合は結果を表示して終了
     if (options.dryRun) {
       logger.info('=== Dry-run モード ===');
       logger.info('');
       for (const agent of agents) {
         logger.info(`【${agent.agentName}】(${agent.agentId || 'ID無し'})`);
         for (const player of agent.players) {
+          const rakebackInfo =
+            player.rakebackRate > 0
+              ? ` [RB: ${player.rakeback.toFixed(2)}pt (${(player.rakebackRate * 100).toFixed(0)}%)]`
+              : '';
           logger.info(
-            `  ${player.nickname} (${player.playerId}): ${player.revenuePoints}pt / ${player.revenueYen}円`
+            `  ${player.nickname} (${player.playerId}): 収益${player.revenuePoints}pt / レーキ${player.clubRake}pt${rakebackInfo} / ${player.revenueYen}円`
           );
         }
         logger.info('');
@@ -198,7 +234,7 @@ async function runCollect(
       return;
     }
 
-    // 9. スプレッドシートに書き込み（週期間のみで冪等性担保）
+    // 10. スプレッドシートに書き込み（週期間のみで冪等性担保）
     const result = await appendCollectionData(
       sheets,
       config.google.spreadsheetId,

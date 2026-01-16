@@ -190,7 +190,7 @@ export async function deleteExistingData(
 }
 
 /**
- * ヘッダー行を確認し、なければ追加
+ * ヘッダー行を常に更新
  */
 async function ensureHeaderRow(
   sheets: sheets_v4.Sheets,
@@ -198,23 +198,14 @@ async function ensureHeaderRow(
   sheetName: string,
   headers: string[]
 ): Promise<void> {
-  const response = await sheets.spreadsheets.values.get({
+  await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `${sheetName}!A1:1`,
+    range: `${sheetName}!A1`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: {
+      values: [headers],
+    },
   });
-
-  const firstRow = response.data.values?.[0];
-
-  if (!firstRow || firstRow.length === 0) {
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `${sheetName}!A1`,
-      valueInputOption: 'USER_ENTERED',
-      requestBody: {
-        values: [headers],
-      },
-    });
-  }
 }
 
 /**
@@ -264,6 +255,56 @@ export async function appendToSheet(
 }
 
 /**
+ * エージェントデータ用のヘッダー
+ */
+export const AGENT_HEADERS = [
+  'エージェントID',
+  'エージェント名',
+  'リマーク',
+  'Super Agent ID',
+  'Super Agent名',
+  'フィーレート',
+];
+
+/**
+ * エージェントデータの型
+ */
+export interface AgentData {
+  agentId: string;
+  agentName: string;
+  superAgentId: string;
+  superAgentName: string;
+  feeRate: number;
+  remark: string;
+}
+
+/**
+ * プレイヤーデータ用のヘッダー
+ */
+export const PLAYER_HEADERS = [
+  'プレイヤーID',
+  'ニックネーム',
+  'エージェントID',
+  'エージェント名',
+  '国/地域',
+  'リマーク',
+  'レーキバックレート',
+];
+
+/**
+ * プレイヤーデータの型
+ */
+export interface PlayerData {
+  playerId: string;
+  nickname: string;
+  agentId: string;
+  agentName: string;
+  country: string;
+  remark: string;
+  rakebackRate: number;
+}
+
+/**
  * 集金データ用のヘッダー
  */
 export const COLLECTION_HEADERS = [
@@ -273,6 +314,9 @@ export const COLLECTION_HEADERS = [
   'プレーヤーニックネーム',
   'プレーヤーID',
   '収益',
+  'レーキ',
+  'レーキバックレート',
+  'レーキバック',
   '金額',
 ];
 
@@ -410,6 +454,7 @@ export interface WeeklyPlayerData {
   agentName: string;
   agentId: string;
   playerRevenue: number;
+  clubRake: number;
 }
 
 export async function readWeeklyData(
@@ -433,6 +478,7 @@ export async function readWeeklyData(
     agentName: headers.indexOf('エージェント'),
     agentId: headers.indexOf('エージェントID'),
     playerRevenue: headers.indexOf('プレーヤー収益_合計'),
+    clubRake: headers.indexOf('クラブレーキ_合計'),
   };
 
   // 全データを取得
@@ -459,8 +505,250 @@ export async function readWeeklyData(
       agentName: row[colIndex.agentName] || '',
       agentId: row[colIndex.agentId] || '',
       playerRevenue: parseFloat(row[colIndex.playerRevenue]) || 0,
+      clubRake: parseFloat(row[colIndex.clubRake]) || 0,
     });
   }
 
   return result;
+}
+
+/**
+ * プレイヤーデータシートからレーキバックレートを取得
+ * キー: `${playerId}:${agentId}`
+ */
+export async function readPlayerRakebackRates(
+  sheets: sheets_v4.Sheets,
+  spreadsheetId: string,
+  sheetName: string
+): Promise<Map<string, number>> {
+  const rakebackRates = new Map<string, number>();
+
+  try {
+    // ヘッダー行を取得してカラムインデックスを特定
+    const headerResponse = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${sheetName}!1:1`,
+    });
+
+    const headers = headerResponse.data.values?.[0] || [];
+    const colIndex = {
+      playerId: headers.indexOf('プレイヤーID'),
+      agentId: headers.indexOf('エージェントID'),
+      rakebackRate: headers.indexOf('レーキバックレート'),
+    };
+
+    // いずれかのカラムが見つからない場合は空のMapを返す
+    if (colIndex.playerId === -1 || colIndex.rakebackRate === -1) {
+      return rakebackRates;
+    }
+
+    // 全データを取得
+    const dataResponse = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${sheetName}!A:G`,
+    });
+
+    const rows = dataResponse.data.values || [];
+
+    // ヘッダー行をスキップしてデータ行を処理
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      const playerId = row[colIndex.playerId] || '';
+      const agentId = row[colIndex.agentId] || '';
+      const rakebackRate = parseFloat(row[colIndex.rakebackRate]) || 0;
+
+      if (playerId) {
+        const key = createPlayerKey(playerId, agentId);
+        rakebackRates.set(key, rakebackRate);
+      }
+    }
+  } catch {
+    // シートが存在しない場合は空のMapを返す
+  }
+
+  return rakebackRates;
+}
+
+/**
+ * 既存のエージェントID一覧を取得
+ */
+export async function getExistingAgentIds(
+  sheets: sheets_v4.Sheets,
+  spreadsheetId: string,
+  sheetName: string
+): Promise<Set<string>> {
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${sheetName}!A:A`,
+    });
+
+    const rows = response.data.values || [];
+    const agentIds = new Set<string>();
+
+    // ヘッダー行をスキップ
+    for (let i = 1; i < rows.length; i++) {
+      const agentId = rows[i][0];
+      if (agentId) {
+        agentIds.add(agentId);
+      }
+    }
+
+    return agentIds;
+  } catch {
+    // シートが存在しない場合は空のセットを返す
+    return new Set<string>();
+  }
+}
+
+/**
+ * 新規エージェントのみ追記
+ */
+export async function appendNewAgents(
+  sheets: sheets_v4.Sheets,
+  spreadsheetId: string,
+  sheetName: string,
+  agents: AgentData[],
+  headers: string[]
+): Promise<{ addedCount: number }> {
+  if (agents.length === 0) {
+    return { addedCount: 0 };
+  }
+
+  // シートの存在確認と作成
+  await ensureSheetExists(sheets, spreadsheetId, sheetName);
+
+  // ヘッダー行の確認と追加
+  await ensureHeaderRow(sheets, spreadsheetId, sheetName, headers);
+
+  // 既存のエージェントIDを取得
+  const existingIds = await getExistingAgentIds(sheets, spreadsheetId, sheetName);
+
+  // 新規エージェントのみフィルタ
+  const newAgents = agents.filter((agent) => !existingIds.has(agent.agentId));
+
+  if (newAgents.length === 0) {
+    return { addedCount: 0 };
+  }
+
+  // データを2次元配列に変換
+  const data = newAgents.map((agent) => [
+    agent.agentId,
+    agent.agentName,
+    agent.remark,
+    agent.superAgentId,
+    agent.superAgentName,
+    agent.feeRate.toString(),
+  ]);
+
+  // データを追記
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: `${sheetName}!A:A`,
+    valueInputOption: 'USER_ENTERED',
+    insertDataOption: 'INSERT_ROWS',
+    requestBody: {
+      values: data,
+    },
+  });
+
+  return { addedCount: newAgents.length };
+}
+
+/**
+ * プレイヤーキー（プレイヤーID + エージェントID）を生成
+ */
+export function createPlayerKey(playerId: string, agentId: string): string {
+  return `${playerId}:${agentId}`;
+}
+
+/**
+ * 既存のプレイヤーキー一覧を取得（プレイヤーID + エージェントIDの組み合わせ）
+ */
+export async function getExistingPlayerKeys(
+  sheets: sheets_v4.Sheets,
+  spreadsheetId: string,
+  sheetName: string
+): Promise<Set<string>> {
+  try {
+    // A列（プレイヤーID）とC列（エージェントID）を取得
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${sheetName}!A:C`,
+    });
+
+    const rows = response.data.values || [];
+    const playerKeys = new Set<string>();
+
+    // ヘッダー行をスキップ
+    for (let i = 1; i < rows.length; i++) {
+      const playerId = rows[i][0] || '';
+      const agentId = rows[i][2] || ''; // C列（インデックス2）がエージェントID
+      if (playerId) {
+        playerKeys.add(createPlayerKey(playerId, agentId));
+      }
+    }
+
+    return playerKeys;
+  } catch {
+    // シートが存在しない場合は空のセットを返す
+    return new Set<string>();
+  }
+}
+
+/**
+ * 新規プレイヤーのみ追記（プレイヤーID + エージェントIDの組み合わせで判定）
+ */
+export async function appendNewPlayers(
+  sheets: sheets_v4.Sheets,
+  spreadsheetId: string,
+  sheetName: string,
+  players: PlayerData[],
+  headers: string[]
+): Promise<{ addedCount: number }> {
+  if (players.length === 0) {
+    return { addedCount: 0 };
+  }
+
+  // シートの存在確認と作成
+  await ensureSheetExists(sheets, spreadsheetId, sheetName);
+
+  // ヘッダー行の確認と追加
+  await ensureHeaderRow(sheets, spreadsheetId, sheetName, headers);
+
+  // 既存のプレイヤーキー（プレイヤーID + エージェントID）を取得
+  const existingKeys = await getExistingPlayerKeys(sheets, spreadsheetId, sheetName);
+
+  // 新規プレイヤーのみフィルタ（プレイヤーID + エージェントIDの組み合わせで判定）
+  const newPlayers = players.filter(
+    (player) => !existingKeys.has(createPlayerKey(player.playerId, player.agentId))
+  );
+
+  if (newPlayers.length === 0) {
+    return { addedCount: 0 };
+  }
+
+  // データを2次元配列に変換
+  const data = newPlayers.map((player) => [
+    player.playerId,
+    player.nickname,
+    player.agentId,
+    player.agentName,
+    player.country,
+    player.remark,
+    player.rakebackRate.toString(),
+  ]);
+
+  // データを追記
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: `${sheetName}!A:A`,
+    valueInputOption: 'USER_ENTERED',
+    insertDataOption: 'INSERT_ROWS',
+    requestBody: {
+      values: data,
+    },
+  });
+
+  return { addedCount: newPlayers.length };
 }
