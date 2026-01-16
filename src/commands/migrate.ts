@@ -164,16 +164,30 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
       }
 
       if (options.dryRun) {
-        const existingNames = new Set(Object.keys(summaryProps));
         const rollupNames = Object.keys(WEEKLY_SUMMARY_ROLLUP_SCHEMA);
-        const missingRollups = rollupNames.filter((name) => !existingNames.has(name));
+        const missingRollups: string[] = [];
+        const convertRollups: string[] = [];
+
+        for (const name of rollupNames) {
+          const existingProp = summaryProps[name] as { type?: string } | undefined;
+          if (!existingProp) {
+            missingRollups.push(name);
+          } else if (existingProp.type !== 'rollup') {
+            convertRollups.push(name);
+          }
+        }
 
         if (reverseRelationName) {
           logger.info(`  リレーションプロパティ: ${reverseRelationName}`);
+          if (convertRollups.length > 0) {
+            logger.info(`  rollupに変換予定のプロパティ: ${convertRollups.length}件`);
+            convertRollups.forEach((name) => logger.info(`    ~ ${name} (既存プロパティは ${name}_old にリネーム)`));
+          }
           if (missingRollups.length > 0) {
             logger.info(`  追加予定のrollupプロパティ: ${missingRollups.length}件`);
             missingRollups.forEach((name) => logger.info(`    + ${name}`));
-          } else {
+          }
+          if (convertRollups.length === 0 && missingRollups.length === 0) {
             logger.info('  rollupプロパティは最新です');
           }
         } else {
@@ -189,10 +203,15 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
             reverseRelationName
           );
 
+          if (rollupResult.converted.length > 0) {
+            logger.success(`  ${rollupResult.converted.length}件のプロパティをrollupに変換しました`);
+            rollupResult.converted.forEach((name) => logger.info(`    ~ ${name} (旧プロパティは ${name}_old にリネーム)`));
+          }
           if (rollupResult.added.length > 0) {
             logger.success(`  ${rollupResult.added.length}件のrollupプロパティを追加しました`);
             rollupResult.added.forEach((name) => logger.info(`    + ${name}`));
-          } else {
+          }
+          if (rollupResult.converted.length === 0 && rollupResult.added.length === 0) {
             logger.info('  rollupプロパティは最新です');
           }
         } else {

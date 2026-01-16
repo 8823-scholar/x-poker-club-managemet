@@ -189,6 +189,7 @@ export async function ensureDatabaseProperties(
 
 /**
  * データベースにrollupプロパティを追加
+ * 既存プロパティがrollup以外の型の場合はリネームしてからrollupを作成
  * @param client Notionクライアント
  * @param databaseId 対象データベースのID
  * @param rollupSchema rollupスキーマ定義
@@ -199,18 +200,38 @@ export async function ensureRollupProperties(
   databaseId: string,
   rollupSchema: Record<string, { rollup: { rollup_property_name: string; function: string } }>,
   relationPropertyName: string
-): Promise<{ added: string[]; existing: string[] }> {
+): Promise<{ added: string[]; existing: string[]; converted: string[] }> {
   const existingProps = await getDatabaseProperties(client, databaseId);
-  const existingNames = new Set(Object.keys(existingProps));
 
   const added: string[] = [];
   const existing: string[] = [];
+  const converted: string[] = [];
+  const propertiesToRename: Record<string, unknown> = {};
   const propertiesToAdd: Record<string, unknown> = {};
 
   for (const [propName, propConfig] of Object.entries(rollupSchema)) {
-    if (existingNames.has(propName)) {
-      existing.push(propName);
+    const existingProp = existingProps[propName] as { type?: string } | undefined;
+
+    if (existingProp) {
+      if (existingProp.type === 'rollup') {
+        // 既にrollup型なのでスキップ
+        existing.push(propName);
+      } else {
+        // 別の型で存在する場合はリネームしてrollupを作成
+        converted.push(propName);
+        propertiesToRename[propName] = {
+          name: `${propName}_old`,
+        };
+        propertiesToAdd[propName] = {
+          rollup: {
+            relation_property_name: relationPropertyName,
+            rollup_property_name: propConfig.rollup.rollup_property_name,
+            function: propConfig.rollup.function,
+          },
+        };
+      }
     } else {
+      // 存在しない場合は新規作成
       added.push(propName);
       propertiesToAdd[propName] = {
         rollup: {
@@ -222,6 +243,15 @@ export async function ensureRollupProperties(
     }
   }
 
+  // 既存プロパティをリネーム
+  if (Object.keys(propertiesToRename).length > 0) {
+    await client.databases.update({
+      database_id: databaseId,
+      properties: propertiesToRename as Parameters<typeof client.databases.update>[0]['properties'],
+    });
+  }
+
+  // rollupプロパティを追加
   if (Object.keys(propertiesToAdd).length > 0) {
     await client.databases.update({
       database_id: databaseId,
@@ -229,7 +259,7 @@ export async function ensureRollupProperties(
     });
   }
 
-  return { added, existing };
+  return { added, existing, converted };
 }
 
 /**
