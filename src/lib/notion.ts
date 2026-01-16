@@ -14,15 +14,13 @@ export const AGENT_DB_SCHEMA = {
 
 /**
  * 週次集金まとめDBのスキーマ定義
- * ※ プレイヤー収益合計・プレイヤー金額合計はrollupで週次集金個別DBから集計
+ * ※ 集計系プロパティはrollupで週次集金個別DBから集計
  */
 export const WEEKLY_SUMMARY_DB_SCHEMA = {
   'タイトル': { title: {} },
   '週期間': { rich_text: {} },
   'エージェント': { relation: { single_property: {} } },
   'プレイヤー数': { number: { format: 'number' } },
-  'レーキ合計': { number: { format: 'number' } },
-  'レーキバック合計': { number: { format: 'number' } },
   'エージェント報酬': { number: { format: 'number' } },
   '精算金額': { number: { format: 'yen' } },
 } as const;
@@ -32,6 +30,18 @@ export const WEEKLY_SUMMARY_DB_SCHEMA = {
  * ※ migrateでリレーション名を動的に設定
  */
 export const WEEKLY_SUMMARY_ROLLUP_SCHEMA = {
+  'レーキ合計': {
+    rollup: {
+      rollup_property_name: 'レーキ',
+      function: 'sum',
+    },
+  },
+  'レーキバック合計': {
+    rollup: {
+      rollup_property_name: 'レーキバック',
+      function: 'sum',
+    },
+  },
   'プレイヤー収益合計': {
     rollup: {
       rollup_property_name: '収益',
@@ -332,15 +342,13 @@ export async function createAgent(
 
 /**
  * 週次集金まとめデータの型（Notion用）
- * ※ totalRevenue, totalAmountはrollupで自動集計されるため除外
+ * ※ 集計系フィールド（レーキ合計、レーキバック合計、収益合計、金額合計）はrollupで自動集計
  */
 export interface NotionWeeklySummaryData {
   weekPeriod: string;
   agentName: string;
   agentPageId: string;
   playerCount: number;
-  totalRake: number;
-  totalRakeback: number;
   agentReward: number;
   settlementAmount: number;
 }
@@ -396,7 +404,7 @@ export async function upsertWeeklySummary(
     data.agentPageId
   );
 
-  // ※ プレイヤー収益合計・プレイヤー金額合計はrollupで自動集計されるため除外
+  // ※ 集計系フィールド（レーキ合計、レーキバック合計、収益合計、金額合計）はrollupで自動集計
   const properties = {
     'タイトル': {
       title: [{ text: { content: `${data.weekPeriod} - ${data.agentName}` } }],
@@ -409,12 +417,6 @@ export async function upsertWeeklySummary(
     },
     'プレイヤー数': {
       number: data.playerCount,
-    },
-    'レーキ合計': {
-      number: data.totalRake,
-    },
-    'レーキバック合計': {
-      number: data.totalRakeback,
     },
     'エージェント報酬': {
       number: data.agentReward,
