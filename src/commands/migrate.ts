@@ -79,6 +79,30 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
         // Dry-runモード: 現在のプロパティと必要なプロパティを比較
         const existingProps = await getDatabaseProperties(notion, db.id);
         const existingNames = new Set(Object.keys(existingProps));
+
+        // スキーマからタイトルプロパティ名を取得
+        let requiredTitleName: string | undefined;
+        for (const [propName, propConfig] of Object.entries(db.schema)) {
+          if ('title' in (propConfig as Record<string, unknown>)) {
+            requiredTitleName = propName;
+            break;
+          }
+        }
+
+        // 既存のタイトルプロパティを見つける
+        let existingTitleName: string | undefined;
+        for (const [propName, propConfig] of Object.entries(existingProps)) {
+          if ((propConfig as Record<string, unknown>).type === 'title') {
+            existingTitleName = propName;
+            break;
+          }
+        }
+
+        // タイトルプロパティのリネームが必要か確認
+        if (requiredTitleName && existingTitleName && requiredTitleName !== existingTitleName) {
+          logger.info(`  タイトルプロパティのリネーム予定: ${existingTitleName} → ${requiredTitleName}`);
+        }
+
         // タイトルプロパティは追加できないので除外
         const requiredNames = Object.keys(db.schema).filter(
           (name) => !('title' in (db.schema as Record<string, Record<string, unknown>>)[name])
@@ -105,10 +129,14 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
           db.relationDbId
         );
 
+        if (result.renamed) {
+          logger.success(`  タイトルプロパティをリネームしました: ${result.renamed}`);
+        }
+
         if (result.added.length > 0) {
           logger.success(`  ${result.added.length}件のプロパティを追加しました`);
           result.added.forEach((name) => logger.info(`    + ${name}`));
-        } else {
+        } else if (!result.renamed) {
           logger.info('  スキーマは最新です');
         }
       }

@@ -83,16 +83,48 @@ export async function ensureDatabaseProperties(
   databaseId: string,
   requiredSchema: Record<string, unknown>,
   relationDbId?: string
-): Promise<{ added: string[]; existing: string[] }> {
+): Promise<{ added: string[]; existing: string[]; renamed?: string }> {
   const existingProps = await getDatabaseProperties(client, databaseId);
   const existingNames = new Set(Object.keys(existingProps));
 
   const added: string[] = [];
   const existing: string[] = [];
   const propertiesToAdd: Record<string, unknown> = {};
+  let renamed: string | undefined;
+
+  // スキーマからタイトルプロパティ名を取得
+  let requiredTitleName: string | undefined;
+  for (const [propName, propConfig] of Object.entries(requiredSchema)) {
+    if ('title' in (propConfig as Record<string, unknown>)) {
+      requiredTitleName = propName;
+      break;
+    }
+  }
+
+  // 既存のタイトルプロパティを見つける
+  let existingTitleName: string | undefined;
+  for (const [propName, propConfig] of Object.entries(existingProps)) {
+    if ((propConfig as Record<string, unknown>).type === 'title') {
+      existingTitleName = propName;
+      break;
+    }
+  }
+
+  // タイトルプロパティの名前が異なる場合はリネーム
+  if (requiredTitleName && existingTitleName && requiredTitleName !== existingTitleName) {
+    await client.databases.update({
+      database_id: databaseId,
+      properties: {
+        [existingTitleName]: {
+          name: requiredTitleName,
+        },
+      } as Parameters<typeof client.databases.update>[0]['properties'],
+    });
+    renamed = `${existingTitleName} → ${requiredTitleName}`;
+  }
 
   for (const [propName, propConfig] of Object.entries(requiredSchema)) {
-    // タイトルプロパティはデータベース作成時に自動で作成されるためスキップ
+    // タイトルプロパティはリネーム済みなのでスキップ
     const isTitle = 'title' in (propConfig as Record<string, unknown>);
     if (isTitle) {
       existing.push(propName);
@@ -124,7 +156,7 @@ export async function ensureDatabaseProperties(
     });
   }
 
-  return { added, existing };
+  return { added, existing, renamed };
 }
 
 /**
