@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import { createImportCommand } from './commands/import.js';
+import { createCollectCommand } from './commands/collect.js';
 
 const program = new Command();
 
@@ -11,5 +12,6 @@ program
 
 // コマンドを登録
 program.addCommand(createImportCommand());
+program.addCommand(createCollectCommand());
 
 program.parse();

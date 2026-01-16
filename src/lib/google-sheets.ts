@@ -268,3 +268,205 @@ export async function appendToSheet(
     range: response.data.updates?.updatedRange || '',
   };
 }
+
+/**
+ * 集金データ用のヘッダー
+ */
+export const COLLECTION_HEADERS = [
+  '週期間',
+  'エージェント名',
+  'エージェントID',
+  'プレーヤーニックネーム',
+  'プレーヤーID',
+  '収益',
+  '金額',
+];
+
+/**
+ * 既存データを検索して削除（週期間のみで判定）
+ */
+async function deleteExistingDataByWeekPeriod(
+  sheets: sheets_v4.Sheets,
+  spreadsheetId: string,
+  sheetName: string,
+  sheetId: number,
+  weekPeriod: string
+): Promise<number> {
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${sheetName}!A:A`,
+  });
+
+  const rows = response.data.values || [];
+  if (rows.length <= 1) {
+    return 0;
+  }
+
+  const rowsToDelete: number[] = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (row[0] === weekPeriod) {
+      rowsToDelete.push(i);
+    }
+  }
+
+  if (rowsToDelete.length === 0) {
+    return 0;
+  }
+
+  rowsToDelete.sort((a, b) => b - a);
+
+  const requests = rowsToDelete.map((rowIndex) => ({
+    deleteDimension: {
+      range: {
+        sheetId,
+        dimension: 'ROWS',
+        startIndex: rowIndex,
+        endIndex: rowIndex + 1,
+      },
+    },
+  }));
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: { requests },
+  });
+
+  return rowsToDelete.length;
+}
+
+/**
+ * 集金データシートにデータを追記（週期間のみで冪等性担保）
+ */
+export async function appendCollectionData(
+  sheets: sheets_v4.Sheets,
+  spreadsheetId: string,
+  sheetName: string,
+  data: string[][],
+  headers: string[],
+  weekPeriod: string
+): Promise<{ addedRows: number; deletedRows: number; range: string }> {
+  const sheetId = await ensureSheetExists(sheets, spreadsheetId, sheetName);
+  await ensureHeaderRow(sheets, spreadsheetId, sheetName, headers);
+
+  const deletedRows = await deleteExistingDataByWeekPeriod(
+    sheets,
+    spreadsheetId,
+    sheetName,
+    sheetId,
+    weekPeriod
+  );
+
+  const response = await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: `${sheetName}!A:A`,
+    valueInputOption: 'USER_ENTERED',
+    insertDataOption: 'INSERT_ROWS',
+    requestBody: {
+      values: data,
+    },
+  });
+
+  return {
+    addedRows: data.length,
+    deletedRows,
+    range: response.data.updates?.updatedRange || '',
+  };
+}
+
+/**
+ * 週次データシートから利用可能な週期間一覧を取得
+ */
+export async function getAvailableWeekPeriods(
+  sheets: sheets_v4.Sheets,
+  spreadsheetId: string,
+  sheetName: string
+): Promise<string[]> {
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${sheetName}!A:A`,
+  });
+
+  const rows = response.data.values || [];
+  if (rows.length <= 1) {
+    return [];
+  }
+
+  // ユニークな週期間を取得（ヘッダー行をスキップ）
+  const periods = new Set<string>();
+  for (let i = 1; i < rows.length; i++) {
+    const period = rows[i][0];
+    if (period) {
+      periods.add(period);
+    }
+  }
+
+  // 降順でソート（最新が先頭）
+  return Array.from(periods).sort().reverse();
+}
+
+/**
+ * 週次データを読み込む
+ */
+export interface WeeklyPlayerData {
+  weekPeriod: string;
+  clubId: string;
+  nickname: string;
+  playerId: string;
+  agentName: string;
+  agentId: string;
+  playerRevenue: number;
+}
+
+export async function readWeeklyData(
+  sheets: sheets_v4.Sheets,
+  spreadsheetId: string,
+  sheetName: string,
+  weekPeriod: string
+): Promise<WeeklyPlayerData[]> {
+  // ヘッダー行を取得してカラムインデックスを特定
+  const headerResponse = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${sheetName}!1:1`,
+  });
+
+  const headers = headerResponse.data.values?.[0] || [];
+  const colIndex = {
+    weekPeriod: headers.indexOf('週期間'),
+    clubId: headers.indexOf('クラブID'),
+    nickname: headers.indexOf('ニックネーム'),
+    playerId: headers.indexOf('プレーヤーID'),
+    agentName: headers.indexOf('エージェント'),
+    agentId: headers.indexOf('エージェントID'),
+    playerRevenue: headers.indexOf('プレーヤー収益_合計'),
+  };
+
+  // 全データを取得
+  const dataResponse = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${sheetName}!A:Z`,
+  });
+
+  const rows = dataResponse.data.values || [];
+  const result: WeeklyPlayerData[] = [];
+
+  // ヘッダー行をスキップしてデータ行を処理
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (row[colIndex.weekPeriod] !== weekPeriod) {
+      continue;
+    }
+
+    result.push({
+      weekPeriod: row[colIndex.weekPeriod] || '',
+      clubId: row[colIndex.clubId] || '',
+      nickname: row[colIndex.nickname] || '',
+      playerId: row[colIndex.playerId] || '',
+      agentName: row[colIndex.agentName] || '',
+      agentId: row[colIndex.agentId] || '',
+      playerRevenue: parseFloat(row[colIndex.playerRevenue]) || 0,
+    });
+  }
+
+  return result;
+}
