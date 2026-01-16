@@ -64,7 +64,7 @@ async function runImport(file: string, options: ImportOptions): Promise<void> {
     logger.info('Google Sheets に接続しました');
 
     // 6. データのフラット化とヘッダー生成
-    const flatData = flattenData(parsed, new Date());
+    const flatData = flattenData(parsed);
     const headers = generateHeaders(parsed.gameTypeNames);
     const weekPeriod = formatWeekPeriod(
       parsed.metadata.periodStart,

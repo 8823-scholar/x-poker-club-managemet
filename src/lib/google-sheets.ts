@@ -7,7 +7,6 @@ import { formatWeekPeriod, numToStr } from './utils.js';
  */
 const BASE_HEADERS = [
   '週期間',
-  '取込日時',
   'クラブID',
   'ニックネーム',
   'プレーヤーID',
@@ -63,21 +62,16 @@ export async function createSheetsClient(
 /**
  * データをフラット化してスプレッドシート用の配列に変換
  */
-export function flattenData(
-  parsed: ParsedExcelData,
-  importedAt: Date
-): string[][] {
+export function flattenData(parsed: ParsedExcelData): string[][] {
   const weekPeriod = formatWeekPeriod(
     parsed.metadata.periodStart,
     parsed.metadata.periodEnd
   );
-  const importedAtStr = importedAt.toISOString();
 
   return parsed.players.map((player) => {
     // 基本データ
     const baseData = [
       weekPeriod,
-      importedAtStr,
       parsed.metadata.clubId,
       player.nickname,
       player.playerId,
