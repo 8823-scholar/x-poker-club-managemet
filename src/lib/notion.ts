@@ -14,6 +14,7 @@ export const AGENT_DB_SCHEMA = {
 
 /**
  * 週次集金まとめDBのスキーマ定義
+ * ※ プレイヤー収益合計・プレイヤー金額合計はrollupで週次集金個別DBから集計
  */
 export const WEEKLY_SUMMARY_DB_SCHEMA = {
   'タイトル': { title: {} },
@@ -23,9 +24,26 @@ export const WEEKLY_SUMMARY_DB_SCHEMA = {
   'レーキ合計': { number: { format: 'number' } },
   'レーキバック合計': { number: { format: 'number' } },
   'エージェント報酬': { number: { format: 'number' } },
-  'プレイヤー収益合計': { number: { format: 'number' } },
-  'プレイヤー金額合計': { number: { format: 'yen' } },
   '精算金額': { number: { format: 'yen' } },
+} as const;
+
+/**
+ * 週次集金まとめDBのロールアッププロパティ定義
+ * ※ migrateでリレーション名を動的に設定
+ */
+export const WEEKLY_SUMMARY_ROLLUP_SCHEMA = {
+  'プレイヤー収益合計': {
+    rollup: {
+      rollup_property_name: '収益',
+      function: 'sum',
+    },
+  },
+  'プレイヤー金額合計': {
+    rollup: {
+      rollup_property_name: '金額',
+      function: 'sum',
+    },
+  },
 } as const;
 
 /**
@@ -39,7 +57,7 @@ export const WEEKLY_DETAIL_DB_SCHEMA = {
   'レーキ': { number: { format: 'number' } },
   'レーキバックレート': { number: { format: 'percent' } },
   'レーキバック': { number: { format: 'number' } },
-  '金額': { number: { format: 'number' } },
+  '金額': { number: { format: 'yen' } },
 } as const;
 
 /**
@@ -160,6 +178,51 @@ export async function ensureDatabaseProperties(
 }
 
 /**
+ * データベースにrollupプロパティを追加
+ * @param client Notionクライアント
+ * @param databaseId 対象データベースのID
+ * @param rollupSchema rollupスキーマ定義
+ * @param relationPropertyName リレーションプロパティ名
+ */
+export async function ensureRollupProperties(
+  client: Client,
+  databaseId: string,
+  rollupSchema: Record<string, { rollup: { rollup_property_name: string; function: string } }>,
+  relationPropertyName: string
+): Promise<{ added: string[]; existing: string[] }> {
+  const existingProps = await getDatabaseProperties(client, databaseId);
+  const existingNames = new Set(Object.keys(existingProps));
+
+  const added: string[] = [];
+  const existing: string[] = [];
+  const propertiesToAdd: Record<string, unknown> = {};
+
+  for (const [propName, propConfig] of Object.entries(rollupSchema)) {
+    if (existingNames.has(propName)) {
+      existing.push(propName);
+    } else {
+      added.push(propName);
+      propertiesToAdd[propName] = {
+        rollup: {
+          relation_property_name: relationPropertyName,
+          rollup_property_name: propConfig.rollup.rollup_property_name,
+          function: propConfig.rollup.function,
+        },
+      };
+    }
+  }
+
+  if (Object.keys(propertiesToAdd).length > 0) {
+    await client.databases.update({
+      database_id: databaseId,
+      properties: propertiesToAdd as Parameters<typeof client.databases.update>[0]['properties'],
+    });
+  }
+
+  return { added, existing };
+}
+
+/**
  * エージェントデータの型（Notion用）
  */
 export interface NotionAgentData {
@@ -269,6 +332,7 @@ export async function createAgent(
 
 /**
  * 週次集金まとめデータの型（Notion用）
+ * ※ totalRevenue, totalAmountはrollupで自動集計されるため除外
  */
 export interface NotionWeeklySummaryData {
   weekPeriod: string;
@@ -278,8 +342,6 @@ export interface NotionWeeklySummaryData {
   totalRake: number;
   totalRakeback: number;
   agentReward: number;
-  totalRevenue: number;
-  totalAmount: number;
   settlementAmount: number;
 }
 
@@ -334,6 +396,7 @@ export async function upsertWeeklySummary(
     data.agentPageId
   );
 
+  // ※ プレイヤー収益合計・プレイヤー金額合計はrollupで自動集計されるため除外
   const properties = {
     'タイトル': {
       title: [{ text: { content: `${data.weekPeriod} - ${data.agentName}` } }],
@@ -355,12 +418,6 @@ export async function upsertWeeklySummary(
     },
     'エージェント報酬': {
       number: data.agentReward,
-    },
-    'プレイヤー収益合計': {
-      number: data.totalRevenue,
-    },
-    'プレイヤー金額合計': {
-      number: data.totalAmount,
     },
     '精算金額': {
       number: data.settlementAmount,

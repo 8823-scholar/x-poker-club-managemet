@@ -34,6 +34,8 @@ interface SyncOptions {
 
 /**
  * エージェント毎の集計データ
+ * ※ Notionではプレイヤー収益合計・プレイヤー金額合計はrollupで集計
+ * ※ totalAmountは精算金額の計算に必要なため保持
  */
 interface AgentSyncSummary {
   agentId: string;
@@ -42,7 +44,6 @@ interface AgentSyncSummary {
   players: CollectionDataRow[];
   totalRake: number;
   totalRakeback: number;
-  totalRevenue: number;
   totalAmount: number;
   agentReward: number;
   settlementAmount: number;
@@ -71,7 +72,6 @@ function groupCollectionByAgent(
         players: [],
         totalRake: 0,
         totalRakeback: 0,
-        totalRevenue: 0,
         totalAmount: 0,
         agentReward: 0,
         settlementAmount: 0,
@@ -82,7 +82,6 @@ function groupCollectionByAgent(
     agent.players.push(row);
     agent.totalRake += row.rake;
     agent.totalRakeback += row.rakeback;
-    agent.totalRevenue += row.revenue;
     agent.totalAmount += row.amount;
   }
 
@@ -247,8 +246,7 @@ async function runSync(
         logger.info(`  レーキ合計: ${agent.totalRake.toFixed(2)}pt`);
         logger.info(`  レーキバック合計: ${agent.totalRakeback.toFixed(2)}pt`);
         logger.info(`  エージェント報酬: ${agent.agentReward.toFixed(2)}pt`);
-        logger.info(`  収益合計: ${agent.totalRevenue.toFixed(2)}pt`);
-        logger.info(`  金額合計: ${agent.totalAmount.toFixed(0)}円`);
+        logger.info(`  金額合計: ${agent.totalAmount.toFixed(0)}円 ※Notionではrollupで集計`);
         logger.info(`  精算金額: ${agent.settlementAmount.toFixed(0)}円`);
         logger.info('');
 
@@ -365,6 +363,7 @@ async function runSync(
         continue;
       }
 
+      // ※ プレイヤー収益合計・プレイヤー金額合計はrollupで自動集計
       const summaryData: NotionWeeklySummaryData = {
         weekPeriod: targetPeriod,
         agentName: summary.agentName,
@@ -373,8 +372,6 @@ async function runSync(
         totalRake: summary.totalRake,
         totalRakeback: summary.totalRakeback,
         agentReward: summary.agentReward,
-        totalRevenue: summary.totalRevenue,
-        totalAmount: summary.totalAmount,
         settlementAmount: summary.settlementAmount,
       };
 

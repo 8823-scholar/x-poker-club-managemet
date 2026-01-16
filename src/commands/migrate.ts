@@ -2,10 +2,12 @@ import { Command } from 'commander';
 import {
   createNotionClient,
   ensureDatabaseProperties,
+  ensureRollupProperties,
   getDatabaseProperties,
   AGENT_DB_SCHEMA,
   PLAYER_DB_SCHEMA,
   WEEKLY_SUMMARY_DB_SCHEMA,
+  WEEKLY_SUMMARY_ROLLUP_SCHEMA,
   WEEKLY_DETAIL_DB_SCHEMA,
 } from '../lib/notion.js';
 import { loadConfig, logger } from '../lib/utils.js';
@@ -138,6 +140,64 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
           result.added.forEach((name) => logger.info(`    + ${name}`));
         } else if (!result.renamed) {
           logger.info('  スキーマは最新です');
+        }
+      }
+    }
+
+    // 4. 週次集金まとめDBにrollupプロパティを追加
+    if (config.notion.weeklySummaryDbId && config.notion.weeklyDetailDbId) {
+      logger.info('週次集金まとめDB のrollupプロパティを確認中...');
+
+      // 週次集金まとめDBのプロパティを取得して、週次集金個別DBからの逆リレーション名を見つける
+      const summaryProps = await getDatabaseProperties(notion, config.notion.weeklySummaryDbId);
+      let reverseRelationName: string | undefined;
+
+      for (const [propName, propConfig] of Object.entries(summaryProps)) {
+        const prop = propConfig as { type?: string; relation?: { database_id?: string } };
+        if (
+          prop.type === 'relation' &&
+          prop.relation?.database_id === config.notion.weeklyDetailDbId
+        ) {
+          reverseRelationName = propName;
+          break;
+        }
+      }
+
+      if (options.dryRun) {
+        const existingNames = new Set(Object.keys(summaryProps));
+        const rollupNames = Object.keys(WEEKLY_SUMMARY_ROLLUP_SCHEMA);
+        const missingRollups = rollupNames.filter((name) => !existingNames.has(name));
+
+        if (reverseRelationName) {
+          logger.info(`  リレーションプロパティ: ${reverseRelationName}`);
+          if (missingRollups.length > 0) {
+            logger.info(`  追加予定のrollupプロパティ: ${missingRollups.length}件`);
+            missingRollups.forEach((name) => logger.info(`    + ${name}`));
+          } else {
+            logger.info('  rollupプロパティは最新です');
+          }
+        } else {
+          logger.warn('  週次集金個別DBからのリレーションが見つかりません');
+          logger.info('  先に週次集金個別DBのスキーマを更新してください');
+        }
+      } else {
+        if (reverseRelationName) {
+          const rollupResult = await ensureRollupProperties(
+            notion,
+            config.notion.weeklySummaryDbId,
+            WEEKLY_SUMMARY_ROLLUP_SCHEMA,
+            reverseRelationName
+          );
+
+          if (rollupResult.added.length > 0) {
+            logger.success(`  ${rollupResult.added.length}件のrollupプロパティを追加しました`);
+            rollupResult.added.forEach((name) => logger.info(`    + ${name}`));
+          } else {
+            logger.info('  rollupプロパティは最新です');
+          }
+        } else {
+          logger.warn('  週次集金個別DBからのリレーションが見つかりません');
+          logger.info('  先に週次集金個別DBのスキーマを更新してください');
         }
       }
     }
