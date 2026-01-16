@@ -17,6 +17,18 @@ export interface ExcelMetadata {
 }
 
 /**
+ * ゲームタイプ別データ
+ */
+export interface GameTypeData {
+  /** プレーヤー収益 */
+  revenue: number | null;
+  /** クラブレーキ */
+  rake: number | null;
+  /** ハンド数 */
+  hands: number | null;
+}
+
+/**
  * プレーヤー行データ
  */
 export interface PlayerRow {
@@ -40,6 +52,10 @@ export interface PlayerRow {
   playerRevenueTotal: number | null;
   /** クラブレーキ合計 */
   clubRevenueTotal: number | null;
+  /** ハンド数合計 */
+  handsTotal: number | null;
+  /** ゲームタイプ別データ */
+  gameTypes: Record<string, GameTypeData>;
 }
 
 /**
@@ -50,6 +66,8 @@ export interface ParsedExcelData {
   metadata: ExcelMetadata;
   /** プレーヤーデータ */
   players: PlayerRow[];
+  /** ゲームタイプ一覧（順序保持） */
+  gameTypeNames: string[];
 }
 
 /**

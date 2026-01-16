@@ -3,9 +3,9 @@ import { Config, ParsedExcelData } from '../types/index.js';
 import { formatWeekPeriod, numToStr } from './utils.js';
 
 /**
- * ヘッダー行の定義
+ * 基本ヘッダー（固定部分）
  */
-const HEADERS = [
+const BASE_HEADERS = [
   '週期間',
   '取込日時',
   'クラブID',
@@ -17,9 +17,30 @@ const HEADERS = [
   'Super Agent',
   'Super Agent ID',
   '国/地域',
-  'プレーヤー収益',
-  'クラブレーキ',
+  'プレーヤー収益_合計',
+  'クラブレーキ_合計',
+  'ハンド数_合計',
 ];
+
+/**
+ * ゲームタイプ別ヘッダーを生成
+ */
+function generateGameTypeHeaders(gameTypeNames: string[]): string[] {
+  const headers: string[] = [];
+  for (const gameType of gameTypeNames) {
+    headers.push(`${gameType}_収益`);
+    headers.push(`${gameType}_レーキ`);
+    headers.push(`${gameType}_ハンド数`);
+  }
+  return headers;
+}
+
+/**
+ * 完全なヘッダー行を生成
+ */
+export function generateHeaders(gameTypeNames: string[]): string[] {
+  return [...BASE_HEADERS, ...generateGameTypeHeaders(gameTypeNames)];
+}
 
 /**
  * Google Sheets クライアントを作成
@@ -52,21 +73,36 @@ export function flattenData(
   );
   const importedAtStr = importedAt.toISOString();
 
-  return parsed.players.map((player) => [
-    weekPeriod,
-    importedAtStr,
-    parsed.metadata.clubId,
-    player.nickname,
-    player.playerId,
-    player.remark,
-    player.agentName || '',
-    player.agentId || '',
-    player.superAgentName || '',
-    player.superAgentId || '',
-    player.country,
-    numToStr(player.playerRevenueTotal),
-    numToStr(player.clubRevenueTotal),
-  ]);
+  return parsed.players.map((player) => {
+    // 基本データ
+    const baseData = [
+      weekPeriod,
+      importedAtStr,
+      parsed.metadata.clubId,
+      player.nickname,
+      player.playerId,
+      player.remark,
+      player.agentName || '',
+      player.agentId || '',
+      player.superAgentName || '',
+      player.superAgentId || '',
+      player.country,
+      numToStr(player.playerRevenueTotal),
+      numToStr(player.clubRevenueTotal),
+      numToStr(player.handsTotal),
+    ];
+
+    // ゲームタイプ別データ
+    const gameTypeData: string[] = [];
+    for (const gameType of parsed.gameTypeNames) {
+      const data = player.gameTypes[gameType];
+      gameTypeData.push(numToStr(data?.revenue));
+      gameTypeData.push(numToStr(data?.rake));
+      gameTypeData.push(numToStr(data?.hands));
+    }
+
+    return [...baseData, ...gameTypeData];
+  });
 }
 
 /**
@@ -104,7 +140,8 @@ async function ensureSheetExists(
 async function ensureHeaderRow(
   sheets: sheets_v4.Sheets,
   spreadsheetId: string,
-  sheetName: string
+  sheetName: string,
+  headers: string[]
 ): Promise<void> {
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId,
@@ -119,7 +156,7 @@ async function ensureHeaderRow(
       range: `${sheetName}!A1`,
       valueInputOption: 'USER_ENTERED',
       requestBody: {
-        values: [HEADERS],
+        values: [headers],
       },
     });
   }
@@ -132,13 +169,14 @@ export async function appendToSheet(
   sheets: sheets_v4.Sheets,
   spreadsheetId: string,
   sheetName: string,
-  data: string[][]
+  data: string[][],
+  headers: string[]
 ): Promise<{ addedRows: number; range: string }> {
   // シートの存在確認と作成
   await ensureSheetExists(sheets, spreadsheetId, sheetName);
 
   // ヘッダー行の確認と追加
-  await ensureHeaderRow(sheets, spreadsheetId, sheetName);
+  await ensureHeaderRow(sheets, spreadsheetId, sheetName, headers);
 
   // データを追記
   const response = await sheets.spreadsheets.values.append({

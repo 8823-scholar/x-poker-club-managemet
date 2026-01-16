@@ -4,6 +4,7 @@ import {
   createSheetsClient,
   appendToSheet,
   flattenData,
+  generateHeaders,
 } from '../lib/google-sheets.js';
 import { loadConfig, validateFilePath, logger, formatDate } from '../lib/utils.js';
 
@@ -34,18 +35,24 @@ async function runImport(file: string, options: ImportOptions): Promise<void> {
       `クラブ: ${parsed.metadata.clubName} (ID: ${parsed.metadata.clubId})`
     );
     logger.info(`プレーヤー数: ${parsed.players.length}名`);
+    logger.info(`ゲームタイプ数: ${parsed.gameTypeNames.length}種類`);
 
     // 3. Dry-runモードの場合はここで終了
     if (options.dryRun) {
       logger.info('=== Dry-run モード ===');
       parsed.players.slice(0, 5).forEach((p, i) => {
         logger.info(
-          `  ${i + 1}. ${p.nickname} (${p.playerId}): 収益 ${p.playerRevenueTotal}`
+          `  ${i + 1}. ${p.nickname} (${p.playerId}): 収益 ${p.playerRevenueTotal}, レーキ ${p.clubRevenueTotal}, ハンド数 ${p.handsTotal}`
         );
       });
       if (parsed.players.length > 5) {
         logger.info(`  ... 他 ${parsed.players.length - 5} 名`);
       }
+      logger.info('');
+      logger.info('ゲームタイプ一覧:');
+      parsed.gameTypeNames.forEach((name, i) => {
+        logger.info(`  ${i + 1}. ${name}`);
+      });
       return;
     }
 
@@ -56,8 +63,9 @@ async function runImport(file: string, options: ImportOptions): Promise<void> {
     const sheets = await createSheetsClient(config);
     logger.info('Google Sheets に接続しました');
 
-    // 6. データのフラット化
+    // 6. データのフラット化とヘッダー生成
     const flatData = flattenData(parsed, new Date());
+    const headers = generateHeaders(parsed.gameTypeNames);
 
     // 7. スプレッドシートへの追記
     const sheetName = options.sheet || '週次データ';
@@ -65,7 +73,8 @@ async function runImport(file: string, options: ImportOptions): Promise<void> {
       sheets,
       config.google.spreadsheetId,
       sheetName,
-      flatData
+      flatData,
+      headers
     );
 
     logger.success(`${result.addedRows}行を追加しました`);
