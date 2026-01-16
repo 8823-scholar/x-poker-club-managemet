@@ -23,9 +23,9 @@ export const WEEKLY_SUMMARY_DB_SCHEMA = {
   'レーキ合計': { number: { format: 'number' } },
   'レーキバック合計': { number: { format: 'number' } },
   'エージェント報酬': { number: { format: 'number' } },
-  '収益合計': { number: { format: 'number' } },
-  '金額合計': { number: { format: 'number' } },
-  '精算金額': { number: { format: 'number' } },
+  'プレイヤー収益合計': { number: { format: 'number' } },
+  'プレイヤー金額合計': { number: { format: 'yen' } },
+  '精算金額': { number: { format: 'yen' } },
 } as const;
 
 /**
@@ -356,10 +356,10 @@ export async function upsertWeeklySummary(
     'エージェント報酬': {
       number: data.agentReward,
     },
-    '収益合計': {
+    'プレイヤー収益合計': {
       number: data.totalRevenue,
     },
-    '金額合計': {
+    'プレイヤー金額合計': {
       number: data.totalAmount,
     },
     '精算金額': {
