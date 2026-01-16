@@ -4,6 +4,7 @@ import {
   ensureDatabaseProperties,
   getDatabaseProperties,
   AGENT_DB_SCHEMA,
+  PLAYER_DB_SCHEMA,
   WEEKLY_SUMMARY_DB_SCHEMA,
   WEEKLY_DETAIL_DB_SCHEMA,
 } from '../lib/notion.js';
@@ -29,6 +30,7 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
       logger.info('必要な環境変数:');
       logger.info('  - NOTION_API_KEY');
       logger.info('  - NOTION_AGENT_DB_ID');
+      logger.info('  - NOTION_PLAYER_DB_ID');
       logger.info('  - NOTION_WEEKLY_SUMMARY_DB_ID');
       logger.info('  - NOTION_WEEKLY_DETAIL_DB_ID');
       process.exit(1);
@@ -44,6 +46,12 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
         name: 'エージェントDB',
         id: config.notion.agentDbId,
         schema: AGENT_DB_SCHEMA,
+      },
+      {
+        name: 'プレイヤーDB',
+        id: config.notion.playerDbId,
+        schema: PLAYER_DB_SCHEMA,
+        relationDbId: config.notion.agentDbId,
       },
       {
         name: '週次集金まとめDB',

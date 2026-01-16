@@ -32,3 +32,16 @@ coverage/
 # Data files
 *.xlsx
 *.xls
+
+# Service account credentials
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!.eslintrc.json
+
+# direnv
+.envrc
+
+# Node version
+.node-version

@@ -6,14 +6,18 @@ import {
 import {
   createNotionClient,
   getAllAgents,
+  getAllPlayers,
   createAgent,
   upsertWeeklySummary,
   upsertWeeklyDetail,
+  upsertPlayer,
   readAgentDataFromSheets,
   readCollectionDataFromSheets,
+  readPlayerDataFromSheets,
   NotionAgentData,
   NotionWeeklySummaryData,
   NotionWeeklyDetailData,
+  NotionPlayerData,
   CollectionDataRow,
 } from '../lib/notion.js';
 import { loadConfig, logger } from '../lib/utils.js';
@@ -24,6 +28,7 @@ import { loadConfig, logger } from '../lib/utils.js';
 interface SyncOptions {
   collectionSheet?: string;
   agentSheet?: string;
+  playerSheet?: string;
   dryRun?: boolean;
 }
 
@@ -118,6 +123,7 @@ async function runSync(
       logger.info('必要な環境変数:');
       logger.info('  - NOTION_API_KEY');
       logger.info('  - NOTION_AGENT_DB_ID');
+      logger.info('  - NOTION_PLAYER_DB_ID');
       logger.info('  - NOTION_WEEKLY_SUMMARY_DB_ID');
       logger.info('  - NOTION_WEEKLY_DETAIL_DB_ID');
       process.exit(1);
@@ -132,6 +138,7 @@ async function runSync(
 
     const collectionSheet = options.collectionSheet || '集金データ';
     const agentSheet = options.agentSheet || 'エージェントデータ';
+    const playerSheet = options.playerSheet || 'プレイヤーデータ';
 
     // 3. 週期間一覧を取得
     const availablePeriods = await getAvailableWeekPeriods(
@@ -180,6 +187,14 @@ async function runSync(
       agentSheet
     );
     logger.info(`エージェントデータ: ${sheetsAgentData.length}件`);
+
+    // 7. プレイヤーデータを読み込み
+    const sheetsPlayerData = await readPlayerDataFromSheets(
+      sheets,
+      config.google.spreadsheetId,
+      playerSheet
+    );
+    logger.info(`プレイヤーデータ: ${sheetsPlayerData.length}件`);
 
     // Google Sheetsのエージェントデータからフィーレートを取得
     const sheetsFeeRates = new Map<string, number>();
@@ -293,7 +308,48 @@ async function runSync(
       logger.success(`${newAgentCount}件のエージェントを追加しました`);
     }
 
-    // 10. 週次集金まとめをNotionに作成/更新
+    // 10. プレイヤーをNotionに同期
+    const existingPlayers = await getAllPlayers(notion, config.notion.playerDbId);
+    logger.info(`Notion既存プレイヤー: ${existingPlayers.size}件`);
+
+    let playerCreatedCount = 0;
+    let playerUpdatedCount = 0;
+
+    for (const player of sheetsPlayerData) {
+      const agentPageId = player.agentId ? agentPageIds.get(player.agentId) || null : null;
+      // キー: プレイヤーID:エージェントページID
+      const playerKey = `${player.playerId}:${agentPageId || ''}`;
+      const existingPageId = existingPlayers.get(playerKey);
+
+      const playerData: NotionPlayerData = {
+        playerId: player.playerId,
+        nickname: player.nickname,
+        agentId: player.agentId,
+        agentPageId,
+        country: player.country,
+        remark: player.remark,
+        rakebackRate: player.rakebackRate,
+      };
+
+      const result = await upsertPlayer(
+        notion,
+        config.notion.playerDbId,
+        playerData,
+        existingPageId
+      );
+
+      if (result.created) {
+        playerCreatedCount++;
+      } else {
+        playerUpdatedCount++;
+      }
+    }
+
+    logger.success(
+      `プレイヤー: ${playerCreatedCount}件作成, ${playerUpdatedCount}件更新`
+    );
+
+    // 12. 週次集金まとめをNotionに作成/更新
     let summaryCreatedCount = 0;
     let summaryUpdatedCount = 0;
     const summaryPageIds = new Map<string, string>();
@@ -341,7 +397,7 @@ async function runSync(
       `週次集金まとめ: ${summaryCreatedCount}件作成, ${summaryUpdatedCount}件更新`
     );
 
-    // 11. 週次集金個別をNotionに作成/更新
+    // 13. 週次集金個別をNotionに作成/更新
     let detailCreatedCount = 0;
     let detailUpdatedCount = 0;
 
@@ -416,6 +472,11 @@ export function createSyncCommand(): Command {
       '--agent-sheet <name>',
       'エージェントデータのシート名',
       'エージェントデータ'
+    )
+    .option(
+      '--player-sheet <name>',
+      'プレイヤーデータのシート名',
+      'プレイヤーデータ'
     )
     .option('--dry-run', 'Notionに書き込まずに同期内容を表示')
     .action(async (weekPeriod: string | undefined, options: SyncOptions) => {

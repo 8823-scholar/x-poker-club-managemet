@@ -85,6 +85,8 @@ export interface Config {
     apiKey: string;
     /** エージェントDBのID */
     agentDbId: string;
+    /** プレイヤーDBのID */
+    playerDbId: string;
     /** 週次集金まとめDBのID */
     weeklySummaryDbId: string;
     /** 週次集金個別DBのID */

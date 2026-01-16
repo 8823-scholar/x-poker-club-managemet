@@ -43,6 +43,18 @@ export const WEEKLY_DETAIL_DB_SCHEMA = {
 } as const;
 
 /**
+ * プレイヤーDBのスキーマ定義
+ */
+export const PLAYER_DB_SCHEMA = {
+  'ニックネーム': { title: {} },
+  'プレイヤーID': { rich_text: {} },
+  'エージェント': { relation: { single_property: {} } },
+  '国/地域': { rich_text: {} },
+  'リマーク': { rich_text: {} },
+  'レーキバックレート': { number: { format: 'percent' } },
+} as const;
+
+/**
  * Notionクライアントを作成
  */
 export function createNotionClient(config: Config): Client {
@@ -561,4 +573,157 @@ export async function readCollectionDataFromSheets(
   }
 
   return result;
+}
+
+/**
+ * プレイヤーデータの型（Notion用）
+ */
+export interface NotionPlayerData {
+  playerId: string;
+  nickname: string;
+  agentId: string;
+  agentPageId: string | null;
+  country: string;
+  remark: string;
+  rakebackRate: number;
+}
+
+/**
+ * 全プレイヤーをNotionから取得（プレイヤーID + エージェントページIDの組み合わせで一意）
+ */
+export async function getAllPlayers(
+  client: Client,
+  databaseId: string
+): Promise<Map<string, string>> {
+  const players = new Map<string, string>();
+  let hasMore = true;
+  let startCursor: string | undefined;
+
+  while (hasMore) {
+    const response = await client.databases.query({
+      database_id: databaseId,
+      start_cursor: startCursor,
+      page_size: 100,
+    });
+
+    for (const page of response.results) {
+      if (!('properties' in page)) continue;
+      const props = page.properties as Record<string, unknown>;
+
+      const playerIdProp = props['プレイヤーID'] as { rich_text?: { plain_text: string }[] } | undefined;
+      const agentProp = props['エージェント'] as { relation?: { id: string }[] } | undefined;
+
+      const playerId = playerIdProp?.rich_text?.[0]?.plain_text || '';
+      const agentPageId = agentProp?.relation?.[0]?.id || '';
+
+      if (playerId) {
+        // キー: プレイヤーID:エージェントページID
+        const key = `${playerId}:${agentPageId}`;
+        players.set(key, page.id);
+      }
+    }
+
+    hasMore = response.has_more;
+    startCursor = response.next_cursor ?? undefined;
+  }
+
+  return players;
+}
+
+/**
+ * プレイヤーをNotionに作成または更新
+ */
+export async function upsertPlayer(
+  client: Client,
+  databaseId: string,
+  data: NotionPlayerData,
+  existingPageId?: string
+): Promise<{ pageId: string; created: boolean }> {
+  const properties: Record<string, unknown> = {
+    'ニックネーム': {
+      title: [{ text: { content: data.nickname } }],
+    },
+    'プレイヤーID': {
+      rich_text: [{ text: { content: data.playerId } }],
+    },
+    '国/地域': {
+      rich_text: [{ text: { content: data.country } }],
+    },
+    'リマーク': {
+      rich_text: [{ text: { content: data.remark } }],
+    },
+    'レーキバックレート': {
+      number: data.rakebackRate,
+    },
+  };
+
+  // エージェントリレーションがある場合のみ追加
+  if (data.agentPageId) {
+    properties['エージェント'] = {
+      relation: [{ id: data.agentPageId }],
+    };
+  }
+
+  if (existingPageId) {
+    await client.pages.update({
+      page_id: existingPageId,
+      properties: properties as Parameters<typeof client.pages.update>[0]['properties'],
+    });
+    return { pageId: existingPageId, created: false };
+  }
+
+  const response = await client.pages.create({
+    parent: { database_id: databaseId },
+    properties: properties as Parameters<typeof client.pages.create>[0]['properties'],
+  });
+  return { pageId: response.id, created: true };
+}
+
+/**
+ * Google Sheetsのプレイヤーデータの型
+ */
+export interface SheetsPlayerData {
+  playerId: string;
+  nickname: string;
+  agentId: string;
+  agentName: string;
+  country: string;
+  remark: string;
+  rakebackRate: number;
+}
+
+/**
+ * Google Sheetsからプレイヤーデータを読み込む
+ */
+export async function readPlayerDataFromSheets(
+  sheets: import('googleapis').sheets_v4.Sheets,
+  spreadsheetId: string,
+  sheetName: string
+): Promise<SheetsPlayerData[]> {
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${sheetName}!A:G`,
+  });
+
+  const rows = response.data.values || [];
+  if (rows.length <= 1) {
+    return [];
+  }
+
+  const players: SheetsPlayerData[] = [];
+  // ヘッダー行をスキップ
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    players.push({
+      playerId: row[0] || '',
+      nickname: row[1] || '',
+      agentId: row[2] || '',
+      agentName: row[3] || '',
+      country: row[4] || '',
+      remark: row[5] || '',
+      rakebackRate: parseFloat(row[6]) || 0,
+    });
+  }
+
+  return players;
 }

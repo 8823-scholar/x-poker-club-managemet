@@ -19,6 +19,7 @@ cp .env.example .env
 | `GOOGLE_SPREADSHEET_ID` | スプレッドシートID（URLの `/d/` と `/edit` の間の文字列） |
 | `NOTION_API_KEY` | Notion APIキー（Notion連携時に必要） |
 | `NOTION_AGENT_DB_ID` | エージェントDBのID |
+| `NOTION_PLAYER_DB_ID` | プレイヤーDBのID |
 | `NOTION_WEEKLY_SUMMARY_DB_ID` | 週次集金まとめDBのID |
 | `NOTION_WEEKLY_DETAIL_DB_ID` | 週次集金個別DBのID |
 
@@ -111,6 +112,7 @@ npm run dev -- sync [weekPeriod] [options]
 # オプション
 #   --collection-sheet <name>  集金データのシート名（デフォルト: 集金データ）
 #   --agent-sheet <name>       エージェントデータのシート名（デフォルト: エージェントデータ）
+#   --player-sheet <name>      プレイヤーデータのシート名（デフォルト: プレイヤーデータ）
 #   --dry-run                  Notionに書き込まずに同期内容を表示
 ```
 
@@ -137,9 +139,10 @@ npm run dev -- sync "2025-12-24〜2025-12-30"
 
 ### 2. データベースの作成
 
-以下の3つのデータベースを作成:
+以下の4つのデータベースを作成:
 
 - **エージェントDB**: エージェントのマスターデータ
+- **プレイヤーDB**: プレイヤーのマスターデータ
 - **週次集金まとめDB**: エージェント毎の週次集計
 - **週次集金個別DB**: プレイヤー毎の詳細データ
 
@@ -174,6 +177,17 @@ npm run dev -- migrate
 | リマーク | Text | 備考 |
 | Super Agent | Text | 上位エージェント名 |
 | フィーレート | Number (%) | 報酬率（デフォルト70%） |
+
+### プレイヤーDB
+
+| プロパティ | 型 | 説明 |
+|-----------|------|------|
+| ニックネーム | Title | プレイヤーのニックネーム |
+| プレイヤーID | Text | 一意のID |
+| エージェント | Relation | エージェントDBへのリレーション |
+| 国/地域 | Text | プレイヤーの国/地域 |
+| リマーク | Text | 備考 |
+| レーキバックレート | Number (%) | レーキバック率 |
 
 ### 週次集金まとめDB
 
