@@ -143,10 +143,10 @@ export async function deleteExistingData(
   weekPeriod: string,
   clubId: string
 ): Promise<number> {
-  // A列（週期間）とC列（クラブID）を取得
+  // A列（週期間）とB列（クラブID）を取得
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: `${sheetName}!A:C`,
+    range: `${sheetName}!A:B`,
   });
 
   const rows = response.data.values || [];
@@ -158,7 +158,7 @@ export async function deleteExistingData(
   const rowsToDelete: number[] = [];
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
-    if (row[0] === weekPeriod && row[2] === clubId) {
+    if (row[0] === weekPeriod && row[1] === clubId) {
       rowsToDelete.push(i);
     }
   }
