@@ -106,32 +106,93 @@ export function flattenData(
 }
 
 /**
- * シートの存在を確認し、なければ作成
+ * シートの存在を確認し、なければ作成。シートIDを返す
  */
 async function ensureSheetExists(
   sheets: sheets_v4.Sheets,
   spreadsheetId: string,
   sheetName: string
-): Promise<void> {
+): Promise<number> {
   const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
-  const sheetExists = spreadsheet.data.sheets?.some(
+  const existingSheet = spreadsheet.data.sheets?.find(
     (s) => s.properties?.title === sheetName
   );
 
-  if (!sheetExists) {
-    await sheets.spreadsheets.batchUpdate({
-      spreadsheetId,
-      requestBody: {
-        requests: [
-          {
-            addSheet: {
-              properties: { title: sheetName },
-            },
-          },
-        ],
-      },
-    });
+  if (existingSheet?.properties?.sheetId != null) {
+    return existingSheet.properties.sheetId;
   }
+
+  const response = await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [
+        {
+          addSheet: {
+            properties: { title: sheetName },
+          },
+        },
+      ],
+    },
+  });
+
+  return response.data.replies?.[0]?.addSheet?.properties?.sheetId ?? 0;
+}
+
+/**
+ * 既存データを検索して削除（週期間とクラブIDが一致する行）
+ */
+export async function deleteExistingData(
+  sheets: sheets_v4.Sheets,
+  spreadsheetId: string,
+  sheetName: string,
+  sheetId: number,
+  weekPeriod: string,
+  clubId: string
+): Promise<number> {
+  // A列（週期間）とC列（クラブID）を取得
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${sheetName}!A:C`,
+  });
+
+  const rows = response.data.values || [];
+  if (rows.length <= 1) {
+    return 0; // ヘッダー行のみ
+  }
+
+  // 削除対象の行インデックスを特定（下から削除するため逆順でソート）
+  const rowsToDelete: number[] = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (row[0] === weekPeriod && row[2] === clubId) {
+      rowsToDelete.push(i);
+    }
+  }
+
+  if (rowsToDelete.length === 0) {
+    return 0;
+  }
+
+  // 下から削除（インデックスがずれないように）
+  rowsToDelete.sort((a, b) => b - a);
+
+  const requests = rowsToDelete.map((rowIndex) => ({
+    deleteDimension: {
+      range: {
+        sheetId,
+        dimension: 'ROWS',
+        startIndex: rowIndex,
+        endIndex: rowIndex + 1,
+      },
+    },
+  }));
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: { requests },
+  });
+
+  return rowsToDelete.length;
 }
 
 /**
@@ -163,20 +224,32 @@ async function ensureHeaderRow(
 }
 
 /**
- * スプレッドシートにデータを追記
+ * スプレッドシートにデータを追記（既存データは削除して上書き）
  */
 export async function appendToSheet(
   sheets: sheets_v4.Sheets,
   spreadsheetId: string,
   sheetName: string,
   data: string[][],
-  headers: string[]
-): Promise<{ addedRows: number; range: string }> {
+  headers: string[],
+  weekPeriod: string,
+  clubId: string
+): Promise<{ addedRows: number; deletedRows: number; range: string }> {
   // シートの存在確認と作成
-  await ensureSheetExists(sheets, spreadsheetId, sheetName);
+  const sheetId = await ensureSheetExists(sheets, spreadsheetId, sheetName);
 
   // ヘッダー行の確認と追加
   await ensureHeaderRow(sheets, spreadsheetId, sheetName, headers);
+
+  // 既存データを削除
+  const deletedRows = await deleteExistingData(
+    sheets,
+    spreadsheetId,
+    sheetName,
+    sheetId,
+    weekPeriod,
+    clubId
+  );
 
   // データを追記
   const response = await sheets.spreadsheets.values.append({
@@ -191,6 +264,7 @@ export async function appendToSheet(
 
   return {
     addedRows: data.length,
+    deletedRows,
     range: response.data.updates?.updatedRange || '',
   };
 }

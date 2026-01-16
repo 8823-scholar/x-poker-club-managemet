@@ -6,7 +6,7 @@ import {
   flattenData,
   generateHeaders,
 } from '../lib/google-sheets.js';
-import { loadConfig, validateFilePath, logger, formatDate } from '../lib/utils.js';
+import { loadConfig, validateFilePath, logger, formatDate, formatWeekPeriod } from '../lib/utils.js';
 
 /**
  * コマンドオプションの型
@@ -66,17 +66,26 @@ async function runImport(file: string, options: ImportOptions): Promise<void> {
     // 6. データのフラット化とヘッダー生成
     const flatData = flattenData(parsed, new Date());
     const headers = generateHeaders(parsed.gameTypeNames);
+    const weekPeriod = formatWeekPeriod(
+      parsed.metadata.periodStart,
+      parsed.metadata.periodEnd
+    );
 
-    // 7. スプレッドシートへの追記
+    // 7. スプレッドシートへの追記（既存データは上書き）
     const sheetName = options.sheet || '週次データ';
     const result = await appendToSheet(
       sheets,
       config.google.spreadsheetId,
       sheetName,
       flatData,
-      headers
+      headers,
+      weekPeriod,
+      parsed.metadata.clubId
     );
 
+    if (result.deletedRows > 0) {
+      logger.info(`既存データ ${result.deletedRows}行を削除しました`);
+    }
     logger.success(`${result.addedRows}行を追加しました`);
     logger.info(`範囲: ${result.range}`);
   } catch (error) {
