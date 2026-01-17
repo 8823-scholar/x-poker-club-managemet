@@ -15,6 +15,7 @@ export const AGENT_DB_SCHEMA = {
 /**
  * 週次集金まとめDBのスキーマ定義
  * ※ 集計系プロパティはrollupで週次集金個別DBから集計
+ * ※ 週次集金個別へのリレーションはrollupの参照元として必要
  */
 export const WEEKLY_SUMMARY_DB_SCHEMA = {
   'タイトル': { title: {} },
@@ -24,6 +25,12 @@ export const WEEKLY_SUMMARY_DB_SCHEMA = {
   'エージェント報酬': { number: { format: 'number' } },
   '精算金額': { number: { format: 'yen' } },
 } as const;
+
+/**
+ * 週次集金まとめDBの週次集金個別へのリレーション（rollup用）
+ * ※ migrateで週次集金個別DBのIDを設定
+ */
+export const WEEKLY_SUMMARY_DETAIL_RELATION_NAME = '週次集金個別';
 
 /**
  * 週次集金まとめDBのロールアッププロパティ定義
@@ -58,10 +65,11 @@ export const WEEKLY_SUMMARY_ROLLUP_SCHEMA = {
 
 /**
  * 週次集金個別DBのスキーマ定義
+ * ※ 週次集金まとめへのリレーションはdual_propertyで逆リレーションも作成
  */
 export const WEEKLY_DETAIL_DB_SCHEMA = {
   'タイトル': { title: {} },
-  '週次集金まとめ': { relation: { single_property: {} } },
+  '週次集金まとめ': { relation: { dual_property: { synced_property_name: '週次集金個別' } } },
   'プレイヤーID': { rich_text: {} },
   '収益': { number: { format: 'number' } },
   'レーキ': { number: { format: 'number' } },
@@ -164,13 +172,27 @@ export async function ensureDatabaseProperties(
     } else {
       added.push(propName);
       // リレーションの場合、database_idを設定
-      if ('relation' in (propConfig as Record<string, unknown>) && relationDbId) {
-        propertiesToAdd[propName] = {
-          relation: {
-            database_id: relationDbId,
-            single_property: {},
-          },
-        };
+      const propConfigTyped = propConfig as { relation?: { single_property?: object; dual_property?: { synced_property_name: string } } };
+      if (propConfigTyped.relation && relationDbId) {
+        if (propConfigTyped.relation.dual_property) {
+          // dual_property: 双方向リレーション（逆リレーションも作成）
+          propertiesToAdd[propName] = {
+            relation: {
+              database_id: relationDbId,
+              dual_property: {
+                synced_property_name: propConfigTyped.relation.dual_property.synced_property_name,
+              },
+            },
+          };
+        } else {
+          // single_property: 単方向リレーション
+          propertiesToAdd[propName] = {
+            relation: {
+              database_id: relationDbId,
+              single_property: {},
+            },
+          };
+        }
       } else {
         propertiesToAdd[propName] = propConfig;
       }
