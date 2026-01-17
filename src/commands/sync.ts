@@ -247,20 +247,20 @@ async function runSync(
         logger.info(`【${agent.agentName}】(${agent.agentId || 'ID無し'})`);
         logger.info(`  フィーレート: ${(agent.feeRate * 100).toFixed(0)}%`);
         logger.info(`  プレイヤー数: ${agent.players.length}名`);
-        logger.info(`  レーキ合計: ${(agent.totalRake * 100).toFixed(0)}円 ※Notionではrollupで集計`);
-        logger.info(`  レーキバック合計: ${(agent.totalRakeback * 100).toFixed(0)}円 ※Notionではrollupで集計`);
-        logger.info(`  エージェント報酬: ${(agent.agentReward * 100).toFixed(0)}円`);
-        logger.info(`  金額合計: ${agent.totalAmount.toFixed(0)}円 ※Notionではrollupで集計`);
-        logger.info(`  精算金額: ${agent.settlementAmount.toFixed(0)}円`);
+        logger.info(`  レーキ合計: ${Math.floor(agent.totalRake * 100)}円 ※Notionではrollupで集計`);
+        logger.info(`  レーキバック合計: ${Math.floor(agent.totalRakeback * 100)}円 ※Notionではrollupで集計`);
+        logger.info(`  エージェント報酬: ${Math.floor(agent.agentReward * 100)}円`);
+        logger.info(`  金額合計: ${Math.floor(agent.totalAmount)}円 ※Notionではrollupで集計`);
+        logger.info(`  精算金額: ${Math.floor(agent.settlementAmount)}円`);
         logger.info('');
 
         for (const player of agent.players) {
           const rakebackInfo =
             player.rakebackRate > 0
-              ? ` [RB: ${(player.rakeback * 100).toFixed(0)}円 (${(player.rakebackRate * 100).toFixed(0)}%)]`
+              ? ` [RB: ${Math.floor(player.rakeback * 100)}円 (${(player.rakebackRate * 100).toFixed(0)}%)]`
               : '';
           logger.info(
-            `    ${player.playerNickname} (${player.playerId}): 収益${player.revenue * 100}円 / レーキ${player.rake * 100}円${rakebackInfo} / ${player.amount}円`
+            `    ${player.playerNickname} (${player.playerId}): 収益${Math.floor(player.revenue * 100)}円 / レーキ${Math.floor(player.rake * 100)}円${rakebackInfo} / ${Math.floor(player.amount)}円`
           );
         }
         logger.info('');
@@ -374,13 +374,13 @@ async function runSync(
       }
 
       // ※ 集計系フィールド（レーキ合計、レーキバック合計、収益合計、金額合計）はrollupで自動集計
-      // ※ エージェント報酬はpt単位なので円に変換（×100）
+      // ※ エージェント報酬はpt単位なので円に変換（×100して切り捨て）
       const summaryData: NotionWeeklySummaryData = {
         weekPeriod: targetPeriod,
         agentName: summary.agentName,
         agentPageId,
         playerCount: summary.players.length,
-        agentReward: summary.agentReward * 100,
+        agentReward: Math.floor(summary.agentReward * 100),
         settlementAmount: summary.settlementAmount,
       };
 
@@ -454,16 +454,16 @@ async function runSync(
           playerPageId = existingPlayers.get(existingPlayerKey);
         }
 
-        // 収益・レーキ・レーキバックはpt単位なので円に変換（×100）
+        // 収益・レーキ・レーキバックはpt単位なので円に変換（×100して切り捨て）
         const detailData: NotionWeeklyDetailData = {
           nickname: player.playerNickname,
           summaryPageId,
           playerPageId,
           playerId: player.playerId,
-          revenue: player.revenue * 100,
-          rake: player.rake * 100,
+          revenue: Math.floor(player.revenue * 100),
+          rake: Math.floor(player.rake * 100),
           rakebackRate: player.rakebackRate,
-          rakeback: player.rakeback * 100,
+          rakeback: Math.floor(player.rakeback * 100),
           amount: player.amount,
         };
 
