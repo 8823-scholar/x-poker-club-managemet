@@ -23,7 +23,7 @@ export const WEEKLY_SUMMARY_DB_SCHEMA = {
   'エージェント': { relation: { single_property: {} } },
   'プレイヤー数': { number: { format: 'number' } },
   'エージェント報酬': { number: { format: 'yen' } },
-  '精算金額': { number: { format: 'yen' } },
+  'エージェント精算額': { number: { format: 'yen' } },
 } as const;
 
 /**
@@ -49,22 +49,16 @@ export const WEEKLY_SUMMARY_ROLLUP_SCHEMA = {
       function: 'sum',
     },
   },
-  'プレイヤー収益合計': {
+  '収益合計': {
     rollup: {
       rollup_property_name: '収益',
       function: 'sum',
     },
   },
-  'プレイヤー金額合計': {
+  '精算金額合計': {
     rollup: {
       rollup_property_name: '金額',
       function: 'sum',
-    },
-  },
-  '精算済み率': {
-    rollup: {
-      rollup_property_name: '精算済み',
-      function: 'percent_checked',
     },
   },
 } as const;
@@ -74,7 +68,7 @@ export const WEEKLY_SUMMARY_ROLLUP_SCHEMA = {
  * ※ 週次集金へのリレーションはdual_propertyで逆リレーションも作成
  */
 export const WEEKLY_DETAIL_DB_SCHEMA = {
-  'タイトル': { title: {} },
+  'プレイヤー名': { title: {} },
   '週次集金': { relation: { dual_property: { synced_property_name: '週次集金個別' } } },
   'プレイヤー': { relation: { single_property: {} } },
   'プレイヤーID': { rich_text: {} },
@@ -82,8 +76,7 @@ export const WEEKLY_DETAIL_DB_SCHEMA = {
   'レーキ': { number: { format: 'yen' } },
   'レーキバックレート': { number: { format: 'percent' } },
   'レーキバック': { number: { format: 'yen' } },
-  '金額': { number: { format: 'yen' } },
-  '精算済み': { checkbox: {} },
+  '精算金額': { number: { format: 'yen' } },
 } as const;
 
 /**
@@ -497,7 +490,7 @@ export async function upsertWeeklySummary(
     'エージェント報酬': {
       number: data.agentReward,
     },
-    '精算金額': {
+    'エージェント精算額': {
       number: data.settlementAmount,
     },
   };
@@ -645,7 +638,6 @@ export interface NotionWeeklyDetailData {
   rakebackRate: number;
   rakeback: number;
   amount: number;
-  settled?: boolean;
 }
 
 /**
@@ -700,7 +692,7 @@ export async function upsertWeeklyDetail(
   );
 
   const properties: Record<string, unknown> = {
-    'タイトル': {
+    'プレイヤー名': {
       title: [{ text: { content: data.nickname } }],
     },
     '週次集金': {
@@ -721,7 +713,7 @@ export async function upsertWeeklyDetail(
     'レーキバック': {
       number: data.rakeback,
     },
-    '金額': {
+    '精算金額': {
       number: data.amount,
     },
   };
@@ -729,11 +721,6 @@ export async function upsertWeeklyDetail(
   // プレイヤーリレーションがある場合のみ追加
   if (data.playerPageId) {
     properties['プレイヤー'] = { relation: [{ id: data.playerPageId }] };
-  }
-
-  // 精算済みフラグは指定された場合のみ設定
-  if (data.settled !== undefined) {
-    properties['精算済み'] = { checkbox: data.settled };
   }
 
   if (existingPageId) {
