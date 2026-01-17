@@ -76,6 +76,7 @@ export const WEEKLY_DETAIL_DB_SCHEMA = {
   'レーキバックレート': { number: { format: 'percent' } },
   'レーキバック': { number: { format: 'number' } },
   '金額': { number: { format: 'yen' } },
+  '集金済み': { checkbox: {} },
 } as const;
 
 /**
@@ -523,6 +524,7 @@ export interface NotionWeeklyDetailData {
   rakebackRate: number;
   rakeback: number;
   amount: number;
+  collected?: boolean;
 }
 
 /**
@@ -576,7 +578,7 @@ export async function upsertWeeklyDetail(
     data.playerId
   );
 
-  const properties = {
+  const properties: Record<string, unknown> = {
     'タイトル': {
       title: [{ text: { content: data.nickname } }],
     },
@@ -603,17 +605,22 @@ export async function upsertWeeklyDetail(
     },
   };
 
+  // 集金済みフラグは新規作成時のみ設定（既存データは上書きしない）
+  if (data.collected !== undefined) {
+    properties['集金済み'] = { checkbox: data.collected };
+  }
+
   if (existingPageId) {
     await client.pages.update({
       page_id: existingPageId,
-      properties,
+      properties: properties as Parameters<typeof client.pages.update>[0]['properties'],
     });
     return { pageId: existingPageId, created: false };
   }
 
   const response = await client.pages.create({
     parent: { database_id: databaseId },
-    properties,
+    properties: properties as Parameters<typeof client.pages.create>[0]['properties'],
   });
   return { pageId: response.id, created: true };
 }

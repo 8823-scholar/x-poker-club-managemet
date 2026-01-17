@@ -216,3 +216,4 @@ npm run dev -- migrate
 | レーキバックレート | Number (%) | 0-100% |
 | レーキバック | Number | pt |
 | 金額 | Number (¥) | 円 |
+| 集金済み | Checkbox | 集金完了フラグ |
