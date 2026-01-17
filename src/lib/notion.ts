@@ -61,6 +61,12 @@ export const WEEKLY_SUMMARY_ROLLUP_SCHEMA = {
       function: 'sum',
     },
   },
+  '精算済み率': {
+    rollup: {
+      rollup_property_name: '精算済み',
+      function: 'percent_checked',
+    },
+  },
 } as const;
 
 /**
@@ -77,7 +83,7 @@ export const WEEKLY_DETAIL_DB_SCHEMA = {
   'レーキバックレート': { number: { format: 'percent' } },
   'レーキバック': { number: { format: 'number' } },
   '金額': { number: { format: 'yen' } },
-  '集金済み': { checkbox: {} },
+  '精算済み': { checkbox: {} },
 } as const;
 
 /**
@@ -639,7 +645,7 @@ export interface NotionWeeklyDetailData {
   rakebackRate: number;
   rakeback: number;
   amount: number;
-  collected?: boolean;
+  settled?: boolean;
 }
 
 /**
@@ -725,9 +731,9 @@ export async function upsertWeeklyDetail(
     properties['プレイヤー'] = { relation: [{ id: data.playerPageId }] };
   }
 
-  // 集金済みフラグは新規作成時のみ設定（既存データは上書きしない）
-  if (data.collected !== undefined) {
-    properties['集金済み'] = { checkbox: data.collected };
+  // 精算済みフラグは指定された場合のみ設定
+  if (data.settled !== undefined) {
+    properties['精算済み'] = { checkbox: data.settled };
   }
 
   if (existingPageId) {

@@ -262,7 +262,28 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
       }
     }
 
-    // 4. 週次集金個別DBにプレイヤーDBへのリレーションを追加
+    // 4. 週次集金個別DBの「集金済み」→「精算済み」リネーム
+    if (config.notion.weeklyDetailDbId) {
+      const detailPropsForRename = await getDatabaseProperties(notion, config.notion.weeklyDetailDbId);
+      const oldSettledProp = detailPropsForRename['集金済み'] as { type?: string } | undefined;
+      const newSettledProp = detailPropsForRename['精算済み'] as { type?: string } | undefined;
+
+      if (oldSettledProp && !newSettledProp) {
+        if (options.dryRun) {
+          logger.info('週次集金個別DB のプロパティリネーム予定: 集金済み → 精算済み');
+        } else {
+          await notion.databases.update({
+            database_id: config.notion.weeklyDetailDbId,
+            properties: {
+              '集金済み': { name: '精算済み' },
+            } as Parameters<typeof notion.databases.update>[0]['properties'],
+          });
+          logger.success('週次集金個別DB のプロパティをリネームしました: 集金済み → 精算済み');
+        }
+      }
+    }
+
+    // 5. 週次集金個別DBにプレイヤーDBへのリレーションを追加
     if (config.notion.weeklyDetailDbId && config.notion.playerDbId) {
       logger.info('週次集金個別DB のプレイヤーリレーションを確認中...');
 
@@ -304,7 +325,7 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
       }
     }
 
-    // 5. 週次集金DBに週次集金個別DBへのリレーションとrollupプロパティを追加
+    // 6. 週次集金DBに週次集金個別DBへのリレーションとrollupプロパティを追加
     if (config.notion.weeklySummaryDbId && config.notion.weeklyDetailDbId) {
       logger.info('週次集金DB のリレーション・rollupプロパティを確認中...');
 

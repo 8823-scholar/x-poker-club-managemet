@@ -203,6 +203,7 @@ npm run dev -- migrate
 | プレイヤー収益合計 | Rollup (sum) | 週次集金個別DBの収益を集計 (pt) |
 | プレイヤー金額合計 | Rollup (sum/¥) | 週次集金個別DBの金額を集計 (円) |
 | 精算金額 | Number (¥) | クラブとの精算金額 (円) |
+| 精算済み率 | Rollup (percent_checked) | 週次集金個別DBの精算済みを集計 (%) |
 
 ### 週次集金個別DB
 
@@ -217,4 +218,4 @@ npm run dev -- migrate
 | レーキバックレート | Number (%) | 0-100% |
 | レーキバック | Number | pt |
 | 金額 | Number (¥) | 円 |
-| 集金済み | Checkbox | 集金完了フラグ |
+| 精算済み | Checkbox | 精算完了フラグ |
