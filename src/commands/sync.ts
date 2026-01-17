@@ -347,7 +347,7 @@ async function runSync(
       `プレイヤー: ${playerCreatedCount}件作成, ${playerUpdatedCount}件更新`
     );
 
-    // 12. 週次集金まとめをNotionに作成/更新
+    // 12. 週次集金をNotionに作成/更新
     let summaryCreatedCount = 0;
     let summaryUpdatedCount = 0;
     const summaryPageIds = new Map<string, string>();
@@ -389,7 +389,7 @@ async function runSync(
     }
 
     logger.success(
-      `週次集金まとめ: ${summaryCreatedCount}件作成, ${summaryUpdatedCount}件更新`
+      `週次集金: ${summaryCreatedCount}件作成, ${summaryUpdatedCount}件更新`
     );
 
     // 13. 週次集金個別をNotionに作成/更新

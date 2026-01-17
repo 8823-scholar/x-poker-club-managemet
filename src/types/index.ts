@@ -87,7 +87,7 @@ export interface Config {
     agentDbId: string;
     /** プレイヤーDBのID */
     playerDbId: string;
-    /** 週次集金まとめDBのID */
+    /** 週次集金DBのID */
     weeklySummaryDbId: string;
     /** 週次集金個別DBのID */
     weeklyDetailDbId: string;

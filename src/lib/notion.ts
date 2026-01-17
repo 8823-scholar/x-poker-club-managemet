@@ -13,7 +13,7 @@ export const AGENT_DB_SCHEMA = {
 } as const;
 
 /**
- * 週次集金まとめDBのスキーマ定義
+ * 週次集金DBのスキーマ定義
  * ※ 集計系プロパティはrollupで週次集金個別DBから集計
  * ※ 週次集金個別へのリレーションはrollupの参照元として必要
  */
@@ -27,13 +27,13 @@ export const WEEKLY_SUMMARY_DB_SCHEMA = {
 } as const;
 
 /**
- * 週次集金まとめDBの週次集金個別へのリレーション（rollup用）
+ * 週次集金DBの週次集金個別へのリレーション（rollup用）
  * ※ migrateで週次集金個別DBのIDを設定
  */
 export const WEEKLY_SUMMARY_DETAIL_RELATION_NAME = '週次集金個別';
 
 /**
- * 週次集金まとめDBのロールアッププロパティ定義
+ * 週次集金DBのロールアッププロパティ定義
  * ※ migrateでリレーション名を動的に設定
  */
 export const WEEKLY_SUMMARY_ROLLUP_SCHEMA = {
@@ -393,7 +393,7 @@ export async function createAgent(
 }
 
 /**
- * 週次集金まとめデータの型（Notion用）
+ * 週次集金データの型（Notion用）
  * ※ 集計系フィールド（レーキ合計、レーキバック合計、収益合計、金額合計）はrollupで自動集計
  */
 export interface NotionWeeklySummaryData {
@@ -406,7 +406,7 @@ export interface NotionWeeklySummaryData {
 }
 
 /**
- * 週次集金まとめをNotionから検索
+ * 週次集金をNotionから検索
  */
 export async function findWeeklySummary(
   client: Client,
@@ -442,7 +442,7 @@ export async function findWeeklySummary(
 }
 
 /**
- * 週次集金まとめをNotionに作成または更新
+ * 週次集金をNotionに作成または更新
  */
 export async function upsertWeeklySummary(
   client: Client,

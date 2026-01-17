@@ -15,7 +15,7 @@ import {
 import { loadConfig, logger } from '../lib/utils.js';
 
 /**
- * 週次集金まとめDBに週次集金個別DBへのリレーションを作成
+ * 週次集金DBに週次集金個別DBへのリレーションを作成
  */
 async function ensureDetailRelation(
   client: Client,
@@ -104,7 +104,7 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
         relationDbId: config.notion.agentDbId,
       },
       {
-        name: '週次集金まとめDB',
+        name: '週次集金DB',
         id: config.notion.weeklySummaryDbId,
         schema: WEEKLY_SUMMARY_DB_SCHEMA,
         relationDbId: config.notion.agentDbId,
@@ -192,9 +192,9 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
       }
     }
 
-    // 4. 週次集金まとめDBに週次集金個別DBへのリレーションとrollupプロパティを追加
+    // 4. 週次集金DBに週次集金個別DBへのリレーションとrollupプロパティを追加
     if (config.notion.weeklySummaryDbId && config.notion.weeklyDetailDbId) {
-      logger.info('週次集金まとめDB のリレーション・rollupプロパティを確認中...');
+      logger.info('週次集金DB のリレーション・rollupプロパティを確認中...');
 
       // 4.1. 週次集金個別DBへのリレーションを作成
       const summaryProps = await getDatabaseProperties(notion, config.notion.weeklySummaryDbId);

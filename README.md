@@ -20,7 +20,7 @@ cp .env.example .env
 | `NOTION_API_KEY` | Notion APIキー（Notion連携時に必要） |
 | `NOTION_AGENT_DB_ID` | エージェントDBのID |
 | `NOTION_PLAYER_DB_ID` | プレイヤーDBのID |
-| `NOTION_WEEKLY_SUMMARY_DB_ID` | 週次集金まとめDBのID |
+| `NOTION_WEEKLY_SUMMARY_DB_ID` | 週次集金DBのID |
 | `NOTION_WEEKLY_DETAIL_DB_ID` | 週次集金個別DBのID |
 
 ## コマンド
@@ -143,7 +143,7 @@ npm run dev -- sync "2025-12-24〜2025-12-30"
 
 - **エージェントDB**: エージェントのマスターデータ
 - **プレイヤーDB**: プレイヤーのマスターデータ
-- **週次集金まとめDB**: エージェント毎の週次集計
+- **週次集金DB**: エージェント毎の週次集計
 - **週次集金個別DB**: プレイヤー毎の詳細データ
 
 ### 3. Integrationの接続
@@ -189,7 +189,7 @@ npm run dev -- migrate
 | リマーク | Text | 備考 |
 | レーキバックレート | Number (%) | レーキバック率 |
 
-### 週次集金まとめDB
+### 週次集金DB
 
 | プロパティ | 型 | 説明 |
 |-----------|------|------|
@@ -209,7 +209,7 @@ npm run dev -- migrate
 | プロパティ | 型 | 説明 |
 |-----------|------|------|
 | タイトル | Title | プレイヤーのニックネーム |
-| 週次集金 | Relation | 週次集金まとめDBへのリレーション |
+| 週次集金 | Relation | 週次集金DBへのリレーション |
 | プレイヤーID | Text | プレイヤーID |
 | 収益 | Number | pt |
 | レーキ | Number | pt |
