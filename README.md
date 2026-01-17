@@ -197,10 +197,10 @@ npm run dev -- migrate
 | 週期間 | Text | 対象週期間 |
 | エージェント | Relation | エージェントDBへのリレーション |
 | プレイヤー数 | Number | 配下プレイヤー数 |
-| レーキ合計 | Rollup (sum) | 週次集金個別DBのレーキを集計 (pt) |
-| レーキバック合計 | Rollup (sum) | 週次集金個別DBのレーキバックを集計 (pt) |
-| エージェント報酬 | Number | (レーキ合計 × フィーレート) - レーキバック合計 |
-| プレイヤー収益合計 | Rollup (sum) | 週次集金個別DBの収益を集計 (pt) |
+| レーキ合計 | Rollup (sum/¥) | 週次集金個別DBのレーキを集計 (円) |
+| レーキバック合計 | Rollup (sum/¥) | 週次集金個別DBのレーキバックを集計 (円) |
+| エージェント報酬 | Number (¥) | (レーキ合計 × フィーレート) - レーキバック合計 |
+| プレイヤー収益合計 | Rollup (sum/¥) | 週次集金個別DBの収益を集計 (円) |
 | プレイヤー金額合計 | Rollup (sum/¥) | 週次集金個別DBの金額を集計 (円) |
 | 精算金額 | Number (¥) | クラブとの精算金額 (円) |
 | 精算済み率 | Rollup (percent_checked) | 週次集金個別DBの精算済みを集計 (%) |
@@ -213,9 +213,9 @@ npm run dev -- migrate
 | 週次集金 | Relation | 週次集金DBへのリレーション |
 | プレイヤー | Relation | プレイヤーDBへのリレーション |
 | プレイヤーID | Text | プレイヤーID |
-| 収益 | Number | pt |
-| レーキ | Number | pt |
+| 収益 | Number (¥) | 円 |
+| レーキ | Number (¥) | 円 |
 | レーキバックレート | Number (%) | 0-100% |
-| レーキバック | Number | pt |
+| レーキバック | Number (¥) | 円 |
 | 金額 | Number (¥) | 円 |
 | 精算済み | Checkbox | 精算完了フラグ |

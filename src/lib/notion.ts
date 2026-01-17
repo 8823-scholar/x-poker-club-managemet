@@ -22,7 +22,7 @@ export const WEEKLY_SUMMARY_DB_SCHEMA = {
   '週期間': { rich_text: {} },
   'エージェント': { relation: { single_property: {} } },
   'プレイヤー数': { number: { format: 'number' } },
-  'エージェント報酬': { number: { format: 'number' } },
+  'エージェント報酬': { number: { format: 'yen' } },
   '精算金額': { number: { format: 'yen' } },
 } as const;
 
@@ -78,10 +78,10 @@ export const WEEKLY_DETAIL_DB_SCHEMA = {
   '週次集金': { relation: { dual_property: { synced_property_name: '週次集金個別' } } },
   'プレイヤー': { relation: { single_property: {} } },
   'プレイヤーID': { rich_text: {} },
-  '収益': { number: { format: 'number' } },
-  'レーキ': { number: { format: 'number' } },
+  '収益': { number: { format: 'yen' } },
+  'レーキ': { number: { format: 'yen' } },
   'レーキバックレート': { number: { format: 'percent' } },
-  'レーキバック': { number: { format: 'number' } },
+  'レーキバック': { number: { format: 'yen' } },
   '金額': { number: { format: 'yen' } },
   '精算済み': { checkbox: {} },
 } as const;
