@@ -419,8 +419,16 @@ async function runSync(
 
       for (const player of summary.players) {
         // プレイヤーページIDを取得
+        // まずGoogle Sheetsから同期したプレイヤーを検索
         const playerLookupKey = `${player.playerId}:${summary.agentId || ''}`;
-        const playerPageId = playerPageIdMap.get(playerLookupKey);
+        let playerPageId = playerPageIdMap.get(playerLookupKey);
+
+        // 見つからない場合はNotionの既存プレイヤーから検索
+        if (!playerPageId) {
+          const agentPageId = agentPageIds.get(summary.agentId || '') || '';
+          const existingPlayerKey = `${player.playerId}:${agentPageId}`;
+          playerPageId = existingPlayers.get(existingPlayerKey);
+        }
 
         const detailData: NotionWeeklyDetailData = {
           nickname: player.playerNickname,
