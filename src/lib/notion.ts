@@ -65,11 +65,11 @@ export const WEEKLY_SUMMARY_ROLLUP_SCHEMA = {
 
 /**
  * 週次集金個別DBのスキーマ定義
- * ※ 週次集金まとめへのリレーションはdual_propertyで逆リレーションも作成
+ * ※ 週次集金へのリレーションはdual_propertyで逆リレーションも作成
  */
 export const WEEKLY_DETAIL_DB_SCHEMA = {
   'タイトル': { title: {} },
-  '週次集金まとめ': { relation: { dual_property: { synced_property_name: '週次集金個別' } } },
+  '週次集金': { relation: { dual_property: { synced_property_name: '週次集金個別' } } },
   'プレイヤーID': { rich_text: {} },
   '収益': { number: { format: 'number' } },
   'レーキ': { number: { format: 'number' } },
@@ -521,7 +521,7 @@ export async function findWeeklyDetail(
     filter: {
       and: [
         {
-          property: '週次集金まとめ',
+          property: '週次集金',
           relation: {
             contains: summaryPageId,
           },
@@ -562,7 +562,7 @@ export async function upsertWeeklyDetail(
     'タイトル': {
       title: [{ text: { content: data.nickname } }],
     },
-    '週次集金まとめ': {
+    '週次集金': {
       relation: [{ id: data.summaryPageId }],
     },
     'プレイヤーID': {
