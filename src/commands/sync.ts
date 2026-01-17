@@ -532,6 +532,23 @@ async function runSync(
     logger.success('週次集金の個別リレーションを更新しました');
 
     logger.success('Notion同期が完了しました');
+
+    // 15. エージェントごとの公開URLを出力
+    logger.info('');
+    logger.info('=== エージェント共有用URL ===');
+    for (const summary of agentSummaries) {
+      if (!summary.agentId) continue;
+      const summaryPageId = summaryPageIds.get(summary.agentId);
+      if (!summaryPageId) continue;
+
+      const sheetsAgent = sheetsAgentData.find((a) => a.agentId === summary.agentId);
+      const displayName = sheetsAgent?.remark || summary.agentName;
+      // NotionページIDのハイフンを除去して公開URLを生成
+      const pageIdWithoutHyphens = summaryPageId.replace(/-/g, '');
+      const notionUrl = `https://long-coaster-623.notion.site/${pageIdWithoutHyphens}`;
+      logger.info(`${displayName}: ${notionUrl}`);
+    }
+    logger.info('');
   } catch (error) {
     if (error instanceof Error) {
       logger.error(error.message);
