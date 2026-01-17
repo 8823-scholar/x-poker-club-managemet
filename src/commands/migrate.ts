@@ -15,6 +15,53 @@ import {
 import { loadConfig, logger } from '../lib/utils.js';
 
 /**
+ * 特定のリレーションプロパティを作成
+ */
+async function ensureRelationProperty(
+  client: Client,
+  databaseId: string,
+  propertyName: string,
+  targetDbId: string,
+  dryRun: boolean
+): Promise<{ created: boolean; existing: boolean }> {
+  const existingProps = await getDatabaseProperties(client, databaseId);
+  const existingProp = existingProps[propertyName] as { type?: string } | undefined;
+
+  if (existingProp) {
+    if (existingProp.type === 'relation') {
+      return { created: false, existing: true };
+    }
+    // 別の型で存在する場合はリネーム
+    if (!dryRun) {
+      await client.databases.update({
+        database_id: databaseId,
+        properties: {
+          [propertyName]: {
+            name: `${propertyName}_old`,
+          },
+        } as Parameters<typeof client.databases.update>[0]['properties'],
+      });
+    }
+  }
+
+  if (!dryRun) {
+    await client.databases.update({
+      database_id: databaseId,
+      properties: {
+        [propertyName]: {
+          relation: {
+            database_id: targetDbId,
+            single_property: {},
+          },
+        },
+      } as Parameters<typeof client.databases.update>[0]['properties'],
+    });
+  }
+
+  return { created: true, existing: false };
+}
+
+/**
  * 週次集金DBに週次集金個別DBへのリレーションを作成
  */
 async function ensureDetailRelation(
@@ -192,7 +239,38 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
       }
     }
 
-    // 4. 週次集金DBに週次集金個別DBへのリレーションとrollupプロパティを追加
+    // 4. 週次集金個別DBにプレイヤーDBへのリレーションを追加
+    if (config.notion.weeklyDetailDbId && config.notion.playerDbId) {
+      logger.info('週次集金個別DB のプレイヤーリレーションを確認中...');
+
+      const detailProps = await getDatabaseProperties(notion, config.notion.weeklyDetailDbId);
+      const existingPlayerRelation = detailProps['プレイヤー'] as { type?: string } | undefined;
+
+      if (options.dryRun) {
+        if (!existingPlayerRelation) {
+          logger.info('  追加予定のリレーション: プレイヤー');
+        } else if (existingPlayerRelation.type !== 'relation') {
+          logger.info('  リレーションに変換予定: プレイヤー (既存は プレイヤー_old にリネーム)');
+        } else {
+          logger.info('  リレーションプロパティ: プレイヤー (既存)');
+        }
+      } else {
+        const playerRelationResult = await ensureRelationProperty(
+          notion,
+          config.notion.weeklyDetailDbId,
+          'プレイヤー',
+          config.notion.playerDbId,
+          false
+        );
+        if (playerRelationResult.created) {
+          logger.success('  リレーションプロパティを追加しました: プレイヤー');
+        } else {
+          logger.info('  リレーションプロパティ: プレイヤー (既存)');
+        }
+      }
+    }
+
+    // 5. 週次集金DBに週次集金個別DBへのリレーションとrollupプロパティを追加
     if (config.notion.weeklySummaryDbId && config.notion.weeklyDetailDbId) {
       logger.info('週次集金DB のリレーション・rollupプロパティを確認中...');
 

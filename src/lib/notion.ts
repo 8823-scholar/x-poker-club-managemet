@@ -70,6 +70,7 @@ export const WEEKLY_SUMMARY_ROLLUP_SCHEMA = {
 export const WEEKLY_DETAIL_DB_SCHEMA = {
   'タイトル': { title: {} },
   '週次集金': { relation: { dual_property: { synced_property_name: '週次集金個別' } } },
+  'プレイヤー': { relation: { single_property: {} } },
   'プレイヤーID': { rich_text: {} },
   '収益': { number: { format: 'number' } },
   'レーキ': { number: { format: 'number' } },
@@ -518,6 +519,7 @@ export async function updateWeeklySummaryDetailRelation(
 export interface NotionWeeklyDetailData {
   nickname: string;
   summaryPageId: string;
+  playerPageId?: string;
   playerId: string;
   revenue: number;
   rake: number;
@@ -604,6 +606,11 @@ export async function upsertWeeklyDetail(
       number: data.amount,
     },
   };
+
+  // プレイヤーリレーションがある場合のみ追加
+  if (data.playerPageId) {
+    properties['プレイヤー'] = { relation: [{ id: data.playerPageId }] };
+  }
 
   // 集金済みフラグは新規作成時のみ設定（既存データは上書きしない）
   if (data.collected !== undefined) {

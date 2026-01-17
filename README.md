@@ -210,6 +210,7 @@ npm run dev -- migrate
 |-----------|------|------|
 | タイトル | Title | プレイヤーのニックネーム |
 | 週次集金 | Relation | 週次集金DBへのリレーション |
+| プレイヤー | Relation | プレイヤーDBへのリレーション |
 | プレイヤーID | Text | プレイヤーID |
 | 収益 | Number | pt |
 | レーキ | Number | pt |

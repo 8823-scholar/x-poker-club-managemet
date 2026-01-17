@@ -313,6 +313,8 @@ async function runSync(
 
     let playerCreatedCount = 0;
     let playerUpdatedCount = 0;
+    // プレイヤーID + エージェントID → プレイヤーページID のマップ
+    const playerPageIdMap = new Map<string, string>();
 
     for (const player of sheetsPlayerData) {
       const agentPageId = player.agentId ? agentPageIds.get(player.agentId) || null : null;
@@ -336,6 +338,10 @@ async function runSync(
         playerData,
         existingPageId
       );
+
+      // プレイヤーID + エージェントID でマップに登録
+      const lookupKey = `${player.playerId}:${player.agentId || ''}`;
+      playerPageIdMap.set(lookupKey, result.pageId);
 
       if (result.created) {
         playerCreatedCount++;
@@ -412,9 +418,14 @@ async function runSync(
       const detailPageIds: string[] = [];
 
       for (const player of summary.players) {
+        // プレイヤーページIDを取得
+        const playerLookupKey = `${player.playerId}:${summary.agentId || ''}`;
+        const playerPageId = playerPageIdMap.get(playerLookupKey);
+
         const detailData: NotionWeeklyDetailData = {
           nickname: player.playerNickname,
           summaryPageId,
+          playerPageId,
           playerId: player.playerId,
           revenue: player.revenue,
           rake: player.rake,
