@@ -72,8 +72,10 @@ function groupByAgent(
     const playerKey = createPlayerKey(player.playerId, player.agentId || '');
     const rakebackRate = rakebackRates.get(playerKey) || 0;
 
+    // レーキを小数点以下2桁に切り捨て（浮動小数点誤差対策）
+    const clubRakeFixed = Math.floor(clubRake * 100) / 100;
     // レーキバック = レーキ × レーキバックレート（小数点以下2桁で切り上げ）
-    const rakeback = Math.ceil(clubRake * rakebackRate * 100) / 100;
+    const rakeback = Math.ceil(clubRakeFixed * rakebackRate * 100) / 100;
 
     // 金額 = (収益 + レーキバック) × 100
     const revenueYen = (revenuePoints + rakeback) * 100;
