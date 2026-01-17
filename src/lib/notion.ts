@@ -416,6 +416,7 @@ export async function createAgent(
 export interface NotionWeeklySummaryData {
   weekPeriod: string;
   agentName: string;
+  agentRemark?: string;
   agentPageId: string;
   playerCount: number;
   agentReward: number;
@@ -474,9 +475,11 @@ export async function upsertWeeklySummary(
   );
 
   // ※ 集計系フィールド（レーキ合計、レーキバック合計、収益合計、金額合計）はrollupで自動集計
+  // タイトルはリマークがあればリマーク、なければエージェント名を使用
+  const displayName = data.agentRemark || data.agentName;
   const properties = {
     'タイトル': {
-      title: [{ text: { content: `${data.weekPeriod} - ${data.agentName}` } }],
+      title: [{ text: { content: `${data.weekPeriod} - ${displayName}` } }],
     },
     '週期間': {
       rich_text: [{ text: { content: data.weekPeriod } }],

@@ -381,9 +381,12 @@ async function runSync(
 
       // ※ 集計系フィールド（レーキ合計、レーキバック合計、収益合計、金額合計）はrollupで自動集計
       // ※ エージェント報酬はpt単位なので円に変換（×100して切り捨て）
+      // ※ タイトルにはリマークがあればリマークを優先
+      const sheetsAgent = sheetsAgentData.find((a) => a.agentId === summary.agentId);
       const summaryData: NotionWeeklySummaryData = {
         weekPeriod: targetPeriod,
         agentName: summary.agentName,
+        agentRemark: sheetsAgent?.remark || undefined,
         agentPageId,
         playerCount: summary.players.length,
         agentReward: Math.floor(summary.agentReward * 100),
