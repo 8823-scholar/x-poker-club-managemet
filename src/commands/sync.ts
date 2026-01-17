@@ -84,8 +84,14 @@ function groupCollectionByAgent(
 
     const agent = agentMap.get(agentKey)!;
     agent.players.push(row);
-    agent.totalRake += row.rake;
-    agent.totalRakeback += row.rakeback;
+
+    // エージェント自身（プレイヤーID = エージェントID）はレーキ・レーキバック集計から除外
+    // ※ エージェント報酬はダウンラインユーザーのレーキのみが対象
+    const isAgentSelf = row.playerId === row.agentId;
+    if (!isAgentSelf) {
+      agent.totalRake += row.rake;
+      agent.totalRakeback += row.rakeback;
+    }
     agent.totalAmount += row.amount;
   }
 
