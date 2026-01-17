@@ -15,7 +15,7 @@ import {
 import { loadConfig, logger } from '../lib/utils.js';
 
 /**
- * 特定のリレーションプロパティを作成
+ * 特定のリレーションプロパティを作成（参照先DBが異なる場合は再作成）
  */
 async function ensureRelationProperty(
   client: Client,
@@ -23,24 +23,46 @@ async function ensureRelationProperty(
   propertyName: string,
   targetDbId: string,
   dryRun: boolean
-): Promise<{ created: boolean; existing: boolean }> {
+): Promise<{ created: boolean; existing: boolean; recreated: boolean }> {
   const existingProps = await getDatabaseProperties(client, databaseId);
-  const existingProp = existingProps[propertyName] as { type?: string } | undefined;
+  const existingProp = existingProps[propertyName] as {
+    type?: string;
+    relation?: { database_id?: string };
+  } | undefined;
 
   if (existingProp) {
     if (existingProp.type === 'relation') {
-      return { created: false, existing: true };
-    }
-    // 別の型で存在する場合はリネーム
-    if (!dryRun) {
-      await client.databases.update({
-        database_id: databaseId,
-        properties: {
-          [propertyName]: {
-            name: `${propertyName}_old`,
-          },
-        } as Parameters<typeof client.databases.update>[0]['properties'],
-      });
+      // リレーション型だが、参照先DBが異なる場合は再作成
+      const existingTargetId = existingProp.relation?.database_id?.replace(/-/g, '') || '';
+      const expectedTargetId = targetDbId.replace(/-/g, '');
+
+      if (existingTargetId === expectedTargetId) {
+        return { created: false, existing: true, recreated: false };
+      }
+
+      // 参照先が異なるのでリネームして再作成
+      if (!dryRun) {
+        await client.databases.update({
+          database_id: databaseId,
+          properties: {
+            [propertyName]: {
+              name: `${propertyName}_old`,
+            },
+          } as Parameters<typeof client.databases.update>[0]['properties'],
+        });
+      }
+    } else {
+      // 別の型で存在する場合はリネーム
+      if (!dryRun) {
+        await client.databases.update({
+          database_id: databaseId,
+          properties: {
+            [propertyName]: {
+              name: `${propertyName}_old`,
+            },
+          } as Parameters<typeof client.databases.update>[0]['properties'],
+        });
+      }
     }
   }
 
@@ -58,7 +80,8 @@ async function ensureRelationProperty(
     });
   }
 
-  return { created: true, existing: false };
+  const wasRecreated = existingProp?.type === 'relation';
+  return { created: true, existing: false, recreated: wasRecreated };
 }
 
 /**
@@ -252,7 +275,16 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
         } else if (existingPlayerRelation.type !== 'relation') {
           logger.info('  リレーションに変換予定: プレイヤー (既存は プレイヤー_old にリネーム)');
         } else {
-          logger.info('  リレーションプロパティ: プレイヤー (既存)');
+          // 参照先DBを確認
+          const existingTargetId = (existingPlayerRelation as { relation?: { database_id?: string } }).relation?.database_id?.replace(/-/g, '') || '';
+          const expectedTargetId = config.notion.playerDbId.replace(/-/g, '');
+          if (existingTargetId !== expectedTargetId) {
+            logger.warn('  リレーション再作成予定: プレイヤー (参照先DBが異なるため)');
+            logger.warn(`    現在の参照先: ${existingTargetId}`);
+            logger.warn(`    正しい参照先: ${expectedTargetId}`);
+          } else {
+            logger.info('  リレーションプロパティ: プレイヤー (既存)');
+          }
         }
       } else {
         const playerRelationResult = await ensureRelationProperty(
@@ -262,7 +294,9 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
           config.notion.playerDbId,
           false
         );
-        if (playerRelationResult.created) {
+        if (playerRelationResult.recreated) {
+          logger.success('  リレーションプロパティを再作成しました: プレイヤー (参照先DBを修正)');
+        } else if (playerRelationResult.created) {
           logger.success('  リレーションプロパティを追加しました: プレイヤー');
         } else {
           logger.info('  リレーションプロパティ: プレイヤー (既存)');

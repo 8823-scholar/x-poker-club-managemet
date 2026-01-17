@@ -12,6 +12,9 @@ import {
   upsertWeeklyDetail,
   upsertPlayer,
   updateWeeklySummaryDetailRelation,
+  getAllWeeklySummariesByPeriod,
+  getAllWeeklyDetailsBySummary,
+  archiveNotionPage,
   readAgentDataFromSheets,
   readCollectionDataFromSheets,
   readPlayerDataFromSheets,
@@ -399,6 +402,26 @@ async function runSync(
       `週次集金: ${summaryCreatedCount}件作成, ${summaryUpdatedCount}件更新`
     );
 
+    // 12.5. 今回のデータに含まれない週次集金を削除
+    const existingSummaries = await getAllWeeklySummariesByPeriod(
+      notion,
+      config.notion.weeklySummaryDbId,
+      targetPeriod
+    );
+    const syncedAgentPageIds = new Set(
+      Array.from(summaryPageIds.values()).map((id) => id)
+    );
+    let summaryDeletedCount = 0;
+    for (const [, summaryPageId] of existingSummaries) {
+      if (!syncedAgentPageIds.has(summaryPageId)) {
+        await archiveNotionPage(notion, summaryPageId);
+        summaryDeletedCount++;
+      }
+    }
+    if (summaryDeletedCount > 0) {
+      logger.info(`週次集金: ${summaryDeletedCount}件削除`);
+    }
+
     // 13. 週次集金個別をNotionに作成/更新
     let detailCreatedCount = 0;
     let detailUpdatedCount = 0;
@@ -463,6 +486,30 @@ async function runSync(
     logger.success(
       `週次集金個別: ${detailCreatedCount}件作成, ${detailUpdatedCount}件更新`
     );
+
+    // 13.5. 今回のデータに含まれない週次集金個別を削除
+    let detailDeletedCount = 0;
+    for (const [agentId, syncedDetailPageIds] of summaryDetailPageIds) {
+      const summaryPageId = summaryPageIds.get(agentId);
+      if (!summaryPageId) continue;
+
+      const existingDetails = await getAllWeeklyDetailsBySummary(
+        notion,
+        config.notion.weeklyDetailDbId,
+        summaryPageId
+      );
+
+      const syncedDetailPageIdSet = new Set(syncedDetailPageIds);
+      for (const [, detailPageId] of existingDetails) {
+        if (!syncedDetailPageIdSet.has(detailPageId)) {
+          await archiveNotionPage(notion, detailPageId);
+          detailDeletedCount++;
+        }
+      }
+    }
+    if (detailDeletedCount > 0) {
+      logger.info(`週次集金個別: ${detailDeletedCount}件削除`);
+    }
 
     // 14. 週次集金の週次集金個別リレーションを更新
     for (const [agentId, detailPageIds] of summaryDetailPageIds) {

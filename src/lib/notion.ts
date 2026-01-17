@@ -114,6 +114,22 @@ export async function getDatabaseProperties(
 }
 
 /**
+ * リレーションプロパティの参照先データベースIDを取得
+ */
+export async function getRelationTargetDatabaseId(
+  client: Client,
+  databaseId: string,
+  propertyName: string
+): Promise<string | null> {
+  const props = await getDatabaseProperties(client, databaseId);
+  const prop = props[propertyName] as { type?: string; relation?: { database_id?: string } } | undefined;
+  if (prop?.type === 'relation' && prop.relation?.database_id) {
+    return prop.relation.database_id;
+  }
+  return null;
+}
+
+/**
  * データベースに不足しているプロパティを追加
  */
 export async function ensureDatabaseProperties(
@@ -510,6 +526,103 @@ export async function updateWeeklySummaryDetailRelation(
         relation: detailPageIds.map((id) => ({ id })),
       },
     },
+  });
+}
+
+/**
+ * 週次集金を週期間で全件取得
+ */
+export async function getAllWeeklySummariesByPeriod(
+  client: Client,
+  databaseId: string,
+  weekPeriod: string
+): Promise<Map<string, string>> {
+  const summaries = new Map<string, string>(); // agentPageId -> summaryPageId
+  let hasMore = true;
+  let startCursor: string | undefined;
+
+  while (hasMore) {
+    const response = await client.databases.query({
+      database_id: databaseId,
+      filter: {
+        property: '週期間',
+        rich_text: {
+          equals: weekPeriod,
+        },
+      },
+      start_cursor: startCursor,
+      page_size: 100,
+    });
+
+    for (const page of response.results) {
+      if (!('properties' in page)) continue;
+      const props = page.properties as Record<string, unknown>;
+      const agentProp = props['エージェント'] as { relation?: { id: string }[] } | undefined;
+      const agentPageId = agentProp?.relation?.[0]?.id || '';
+      if (agentPageId) {
+        summaries.set(agentPageId, page.id);
+      }
+    }
+
+    hasMore = response.has_more;
+    startCursor = response.next_cursor ?? undefined;
+  }
+
+  return summaries;
+}
+
+/**
+ * 週次集金個別を週次集金で全件取得
+ */
+export async function getAllWeeklyDetailsBySummary(
+  client: Client,
+  databaseId: string,
+  summaryPageId: string
+): Promise<Map<string, string>> {
+  const details = new Map<string, string>(); // playerId -> detailPageId
+  let hasMore = true;
+  let startCursor: string | undefined;
+
+  while (hasMore) {
+    const response = await client.databases.query({
+      database_id: databaseId,
+      filter: {
+        property: '週次集金',
+        relation: {
+          contains: summaryPageId,
+        },
+      },
+      start_cursor: startCursor,
+      page_size: 100,
+    });
+
+    for (const page of response.results) {
+      if (!('properties' in page)) continue;
+      const props = page.properties as Record<string, unknown>;
+      const playerIdProp = props['プレイヤーID'] as { rich_text?: { plain_text: string }[] } | undefined;
+      const playerId = playerIdProp?.rich_text?.[0]?.plain_text || '';
+      if (playerId) {
+        details.set(playerId, page.id);
+      }
+    }
+
+    hasMore = response.has_more;
+    startCursor = response.next_cursor ?? undefined;
+  }
+
+  return details;
+}
+
+/**
+ * Notionページをアーカイブ（削除）
+ */
+export async function archiveNotionPage(
+  client: Client,
+  pageId: string
+): Promise<void> {
+  await client.pages.update({
+    page_id: pageId,
+    archived: true,
   });
 }
 
