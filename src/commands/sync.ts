@@ -11,6 +11,7 @@ import {
   upsertWeeklySummary,
   upsertWeeklyDetail,
   upsertPlayer,
+  updateWeeklySummaryDetailRelation,
   readAgentDataFromSheets,
   readCollectionDataFromSheets,
   readPlayerDataFromSheets,
@@ -395,6 +396,7 @@ async function runSync(
     // 13. 週次集金個別をNotionに作成/更新
     let detailCreatedCount = 0;
     let detailUpdatedCount = 0;
+    const summaryDetailPageIds = new Map<string, string[]>();
 
     for (const summary of agentSummaries) {
       if (!summary.agentId) {
@@ -406,6 +408,8 @@ async function runSync(
         logger.warn(`集金まとめのページIDが見つかりません: ${summary.agentId}`);
         continue;
       }
+
+      const detailPageIds: string[] = [];
 
       for (const player of summary.players) {
         const detailData: NotionWeeklyDetailData = {
@@ -425,17 +429,30 @@ async function runSync(
           detailData
         );
 
+        detailPageIds.push(result.pageId);
+
         if (result.created) {
           detailCreatedCount++;
         } else {
           detailUpdatedCount++;
         }
       }
+
+      summaryDetailPageIds.set(summary.agentId, detailPageIds);
     }
 
     logger.success(
       `週次集金個別: ${detailCreatedCount}件作成, ${detailUpdatedCount}件更新`
     );
+
+    // 14. 週次集金の週次集金個別リレーションを更新
+    for (const [agentId, detailPageIds] of summaryDetailPageIds) {
+      const summaryPageId = summaryPageIds.get(agentId);
+      if (summaryPageId && detailPageIds.length > 0) {
+        await updateWeeklySummaryDetailRelation(notion, summaryPageId, detailPageIds);
+      }
+    }
+    logger.success('週次集金の個別リレーションを更新しました');
 
     logger.success('Notion同期が完了しました');
   } catch (error) {

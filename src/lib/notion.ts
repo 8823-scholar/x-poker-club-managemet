@@ -494,6 +494,24 @@ export async function upsertWeeklySummary(
 }
 
 /**
+ * 週次集金の週次集金個別リレーションを更新
+ */
+export async function updateWeeklySummaryDetailRelation(
+  client: Client,
+  summaryPageId: string,
+  detailPageIds: string[]
+): Promise<void> {
+  await client.pages.update({
+    page_id: summaryPageId,
+    properties: {
+      [WEEKLY_SUMMARY_DETAIL_RELATION_NAME]: {
+        relation: detailPageIds.map((id) => ({ id })),
+      },
+    },
+  });
+}
+
+/**
  * 週次集金個別データの型（Notion用）
  */
 export interface NotionWeeklyDetailData {
