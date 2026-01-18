@@ -19,7 +19,7 @@ export const AGENT_DB_SCHEMA = {
  */
 export const WEEKLY_SUMMARY_DB_SCHEMA = {
   'タイトル': { title: {} },
-  '週期間': { rich_text: {} },
+  '週期間': { date: {} },
   'エージェント': { relation: { single_property: {} } },
   'プレイヤー数': { number: { format: 'number' } },
   'エージェント報酬': { number: { format: 'yen' } },
@@ -90,6 +90,23 @@ export const PLAYER_DB_SCHEMA = {
   'リマーク': { rich_text: {} },
   'レーキバックレート': { number: { format: 'percent' } },
 } as const;
+
+/**
+ * 週期間文字列をパースして開始日と終了日を取得
+ * @param weekPeriod "2025-01-13〜2025-01-19" 形式の文字列
+ * @returns { start: "2025-01-13", end: "2025-01-19" }
+ */
+export function parseWeekPeriod(weekPeriod: string): { start: string; end: string } {
+  // 〜（波ダッシュ）または～（全角チルダ）で分割
+  const parts = weekPeriod.split(/[〜～]/);
+  if (parts.length !== 2) {
+    throw new Error(`週期間の形式が不正です: ${weekPeriod}`);
+  }
+  return {
+    start: parts[0].trim(),
+    end: parts[1].trim(),
+  };
+}
 
 /**
  * Notionクライアントを作成
@@ -432,14 +449,15 @@ export async function findWeeklySummary(
   weekPeriod: string,
   agentPageId: string
 ): Promise<string | null> {
+  const { start } = parseWeekPeriod(weekPeriod);
   const response = await client.databases.query({
     database_id: databaseId,
     filter: {
       and: [
         {
           property: '週期間',
-          rich_text: {
-            equals: weekPeriod,
+          date: {
+            equals: start,
           },
         },
         {
@@ -477,12 +495,13 @@ export async function upsertWeeklySummary(
   // ※ 集計系フィールド（レーキ合計、レーキバック合計、収益合計、金額合計）はrollupで自動集計
   // タイトルはリマークがあればリマーク、なければエージェント名を使用
   const displayName = data.agentRemark || data.agentName;
+  const { start, end } = parseWeekPeriod(data.weekPeriod);
   const properties = {
     'タイトル': {
       title: [{ text: { content: `${data.weekPeriod} - ${displayName}` } }],
     },
     '週期間': {
-      rich_text: [{ text: { content: data.weekPeriod } }],
+      date: { start, end },
     },
     'エージェント': {
       relation: [{ id: data.agentPageId }],
@@ -540,6 +559,7 @@ export async function getAllWeeklySummariesByPeriod(
   weekPeriod: string
 ): Promise<Map<string, string>> {
   const summaries = new Map<string, string>(); // agentPageId -> summaryPageId
+  const { start } = parseWeekPeriod(weekPeriod);
   let hasMore = true;
   let startCursor: string | undefined;
 
@@ -548,8 +568,8 @@ export async function getAllWeeklySummariesByPeriod(
       database_id: databaseId,
       filter: {
         property: '週期間',
-        rich_text: {
-          equals: weekPeriod,
+        date: {
+          equals: start,
         },
       },
       start_cursor: startCursor,
