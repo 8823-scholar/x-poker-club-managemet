@@ -11,6 +11,7 @@ import {
   WEEKLY_SUMMARY_ROLLUP_SCHEMA,
   WEEKLY_SUMMARY_DETAIL_RELATION_NAME,
   WEEKLY_DETAIL_DB_SCHEMA,
+  WEEKLY_TOTAL_DB_SCHEMA,
 } from '../lib/notion.js';
 import { loadConfig, logger } from '../lib/utils.js';
 
@@ -153,6 +154,7 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
       logger.info('  - NOTION_PLAYER_DB_ID');
       logger.info('  - NOTION_WEEKLY_SUMMARY_DB_ID');
       logger.info('  - NOTION_WEEKLY_DETAIL_DB_ID');
+      logger.info('  - NOTION_WEEKLY_TOTAL_DB_ID');
       process.exit(1);
     }
 
@@ -184,6 +186,11 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
         id: config.notion.weeklyDetailDbId,
         schema: WEEKLY_DETAIL_DB_SCHEMA,
         relationDbId: config.notion.weeklySummaryDbId,
+      },
+      {
+        name: '週次トータルDB',
+        id: config.notion.weeklyTotalDbId,
+        schema: WEEKLY_TOTAL_DB_SCHEMA,
       },
     ];
 

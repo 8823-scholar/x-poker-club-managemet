@@ -91,5 +91,7 @@ export interface Config {
     weeklySummaryDbId: string;
     /** 週次集金個別DBのID */
     weeklyDetailDbId: string;
+    /** 週次トータルDBのID */
+    weeklyTotalDbId: string;
   };
 }

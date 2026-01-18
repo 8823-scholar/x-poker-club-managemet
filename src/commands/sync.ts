@@ -10,6 +10,7 @@ import {
   createAgent,
   upsertWeeklySummary,
   upsertWeeklyDetail,
+  upsertWeeklyTotal,
   upsertPlayer,
   updateWeeklySummaryDetailRelation,
   getAllWeeklySummariesByPeriod,
@@ -21,6 +22,7 @@ import {
   NotionAgentData,
   NotionWeeklySummaryData,
   NotionWeeklyDetailData,
+  NotionWeeklyTotalData,
   NotionPlayerData,
   CollectionDataRow,
 } from '../lib/notion.js';
@@ -135,6 +137,7 @@ async function runSync(
       logger.info('  - NOTION_PLAYER_DB_ID');
       logger.info('  - NOTION_WEEKLY_SUMMARY_DB_ID');
       logger.info('  - NOTION_WEEKLY_DETAIL_DB_ID');
+      logger.info('  - NOTION_WEEKLY_TOTAL_DB_ID');
       process.exit(1);
     }
 
@@ -271,6 +274,19 @@ async function runSync(
         }
         logger.info('');
       }
+
+      // 週次トータルを計算・表示
+      const grandTotalRake = agentSummaries.reduce((sum, a) => sum + a.totalRake, 0);
+      const grandTotalRakeback = agentSummaries.reduce((sum, a) => sum + a.totalRakeback, 0);
+      const grandTotalAgentFee = agentSummaries.reduce((sum, a) => sum + a.agentReward, 0);
+      const houseProfit = grandTotalRake - grandTotalRakeback - grandTotalAgentFee;
+
+      logger.info('=== 週次トータル ===');
+      logger.info(`  総レーキ: ${Math.floor(grandTotalRake * 100)}円`);
+      logger.info(`  総レーキバック: ${Math.floor(grandTotalRakeback * 100)}円`);
+      logger.info(`  総エージェントフィー: ${Math.floor(grandTotalAgentFee * 100)}円`);
+      logger.info(`  ハウス利益: ${Math.floor(houseProfit * 100)}円`);
+      logger.info('');
 
       return;
     }
@@ -530,6 +546,34 @@ async function runSync(
       }
     }
     logger.success('週次集金の個別リレーションを更新しました');
+
+    // 15. 週次トータルをNotionに同期
+    if (config.notion.weeklyTotalDbId) {
+      const grandTotalRake = agentSummaries.reduce((sum, a) => sum + a.totalRake, 0);
+      const grandTotalRakeback = agentSummaries.reduce((sum, a) => sum + a.totalRakeback, 0);
+      const grandTotalAgentFee = agentSummaries.reduce((sum, a) => sum + a.agentReward, 0);
+      const houseProfit = grandTotalRake - grandTotalRakeback - grandTotalAgentFee;
+
+      const totalData: NotionWeeklyTotalData = {
+        weekPeriod: targetPeriod,
+        totalRake: Math.floor(grandTotalRake * 100),
+        totalRakeback: Math.floor(grandTotalRakeback * 100),
+        totalAgentFee: Math.floor(grandTotalAgentFee * 100),
+        houseProfit: Math.floor(houseProfit * 100),
+      };
+
+      const totalResult = await upsertWeeklyTotal(
+        notion,
+        config.notion.weeklyTotalDbId,
+        totalData
+      );
+
+      if (totalResult.created) {
+        logger.success('週次トータルを作成しました');
+      } else {
+        logger.success('週次トータルを更新しました');
+      }
+    }
 
     logger.success('Notion同期が完了しました');
 

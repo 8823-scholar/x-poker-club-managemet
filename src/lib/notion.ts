@@ -81,6 +81,19 @@ export const WEEKLY_DETAIL_DB_SCHEMA = {
 } as const;
 
 /**
+ * 週次トータルDBのスキーマ定義
+ * ※ 週次の全体集計を管理
+ */
+export const WEEKLY_TOTAL_DB_SCHEMA = {
+  'タイトル': { title: {} },
+  '週期間': { date: {} },
+  '総レーキ': { number: { format: 'yen' } },
+  '総レーキバック': { number: { format: 'yen' } },
+  '総エージェントフィー': { number: { format: 'yen' } },
+  'ハウス利益': { number: { format: 'yen' } },
+} as const;
+
+/**
  * プレイヤーDBのスキーマ定義
  */
 export const PLAYER_DB_SCHEMA = {
@@ -1038,4 +1051,88 @@ export async function readPlayerDataFromSheets(
   }
 
   return players;
+}
+
+/**
+ * 週次トータルデータの型（Notion用）
+ */
+export interface NotionWeeklyTotalData {
+  weekPeriod: string;
+  totalRake: number;
+  totalRakeback: number;
+  totalAgentFee: number;
+  houseProfit: number;
+}
+
+/**
+ * 週次トータルを週期間で検索
+ */
+async function findWeeklyTotal(
+  client: Client,
+  databaseId: string,
+  weekPeriod: string
+): Promise<string | null> {
+  const { start } = parseWeekPeriod(weekPeriod);
+  const response = await client.databases.query({
+    database_id: databaseId,
+    filter: {
+      property: '週期間',
+      date: {
+        equals: start,
+      },
+    },
+    page_size: 1,
+  });
+
+  if (response.results.length > 0) {
+    return response.results[0].id;
+  }
+  return null;
+}
+
+/**
+ * 週次トータルをNotionに作成または更新
+ */
+export async function upsertWeeklyTotal(
+  client: Client,
+  databaseId: string,
+  data: NotionWeeklyTotalData
+): Promise<{ pageId: string; created: boolean }> {
+  const existingPageId = await findWeeklyTotal(client, databaseId, data.weekPeriod);
+  const { start, end } = parseWeekPeriod(data.weekPeriod);
+
+  const properties = {
+    'タイトル': {
+      title: [{ text: { content: data.weekPeriod } }],
+    },
+    '週期間': {
+      date: { start, end },
+    },
+    '総レーキ': {
+      number: data.totalRake,
+    },
+    '総レーキバック': {
+      number: data.totalRakeback,
+    },
+    '総エージェントフィー': {
+      number: data.totalAgentFee,
+    },
+    'ハウス利益': {
+      number: data.houseProfit,
+    },
+  };
+
+  if (existingPageId) {
+    await client.pages.update({
+      page_id: existingPageId,
+      properties,
+    });
+    return { pageId: existingPageId, created: false };
+  }
+
+  const response = await client.pages.create({
+    parent: { database_id: databaseId },
+    properties,
+  });
+  return { pageId: response.id, created: true };
 }

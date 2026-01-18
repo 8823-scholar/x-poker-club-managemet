@@ -31,6 +31,7 @@ export function loadConfig(): Config {
           playerDbId: process.env.NOTION_PLAYER_DB_ID || '',
           weeklySummaryDbId: process.env.NOTION_WEEKLY_SUMMARY_DB_ID || '',
           weeklyDetailDbId: process.env.NOTION_WEEKLY_DETAIL_DB_ID || '',
+          weeklyTotalDbId: process.env.NOTION_WEEKLY_TOTAL_DB_ID || '',
         }
       : undefined,
   };
