@@ -100,6 +100,11 @@ export const WEEKLY_TOTAL_DB_SCHEMA = {
 export const WEEKLY_TOTAL_SUMMARY_RELATION_NAME = '週次集金';
 
 /**
+ * 週次集金DBの週次トータルへのリレーション名（逆リレーション）
+ */
+export const WEEKLY_SUMMARY_TOTAL_RELATION_NAME = '週次トータル';
+
+/**
  * プレイヤーDBのスキーマ定義
  */
 export const PLAYER_DB_SCHEMA = {

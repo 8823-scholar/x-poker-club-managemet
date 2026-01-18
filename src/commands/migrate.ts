@@ -13,6 +13,7 @@ import {
   WEEKLY_DETAIL_DB_SCHEMA,
   WEEKLY_TOTAL_DB_SCHEMA,
   WEEKLY_TOTAL_SUMMARY_RELATION_NAME,
+  WEEKLY_SUMMARY_TOTAL_RELATION_NAME,
 } from '../lib/notion.js';
 import { loadConfig, logger } from '../lib/utils.js';
 
@@ -79,6 +80,76 @@ async function ensureRelationProperty(
           },
         },
       } as Parameters<typeof client.databases.update>[0]['properties'],
+    });
+  }
+
+  const wasRecreated = existingProp?.type === 'relation';
+  return { created: true, existing: false, recreated: wasRecreated };
+}
+
+/**
+ * 双方向リレーションプロパティを作成
+ */
+async function ensureDualRelationProperty(
+  client: Client,
+  databaseId: string,
+  propertyName: string,
+  targetDbId: string,
+  syncedPropertyName: string,
+  dryRun: boolean
+): Promise<{ created: boolean; existing: boolean; recreated: boolean }> {
+  const existingProps = await getDatabaseProperties(client, databaseId);
+  const existingProp = existingProps[propertyName] as {
+    type?: string;
+    relation?: { database_id?: string };
+  } | undefined;
+
+  if (existingProp) {
+    if (existingProp.type === 'relation') {
+      const existingTargetId = existingProp.relation?.database_id?.replace(/-/g, '') || '';
+      const expectedTargetId = targetDbId.replace(/-/g, '');
+
+      if (existingTargetId === expectedTargetId) {
+        return { created: false, existing: true, recreated: false };
+      }
+
+      if (!dryRun) {
+        await client.databases.update({
+          database_id: databaseId,
+          properties: {
+            [propertyName]: {
+              name: `${propertyName}_old`,
+            },
+          } as Parameters<typeof client.databases.update>[0]['properties'],
+        });
+      }
+    } else {
+      if (!dryRun) {
+        await client.databases.update({
+          database_id: databaseId,
+          properties: {
+            [propertyName]: {
+              name: `${propertyName}_old`,
+            },
+          } as Parameters<typeof client.databases.update>[0]['properties'],
+        });
+      }
+    }
+  }
+
+  if (!dryRun) {
+    await client.databases.update({
+      database_id: databaseId,
+      properties: {
+        [propertyName]: {
+          relation: {
+            database_id: targetDbId,
+            dual_property: {
+              synced_property_name: syncedPropertyName,
+            },
+          },
+        },
+      } as unknown as Parameters<typeof client.databases.update>[0]['properties'],
     });
   }
 
@@ -411,35 +482,38 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
       }
     }
 
-    // 7. 週次トータルDBに週次集金DBへのリレーションを追加
+    // 7. 週次トータルDBと週次集金DBの双方向リレーションを追加
     if (config.notion.weeklyTotalDbId && config.notion.weeklySummaryDbId) {
-      logger.info('週次トータルDB の週次集金リレーションを確認中...');
+      logger.info('週次トータルDB ⇔ 週次集金DB の双方向リレーションを確認中...');
 
       const totalProps = await getDatabaseProperties(notion, config.notion.weeklyTotalDbId);
       const existingRelation = totalProps[WEEKLY_TOTAL_SUMMARY_RELATION_NAME] as { type?: string } | undefined;
 
       if (options.dryRun) {
         if (!existingRelation) {
-          logger.info(`  追加予定のリレーション: ${WEEKLY_TOTAL_SUMMARY_RELATION_NAME}`);
+          logger.info(`  追加予定の双方向リレーション:`);
+          logger.info(`    週次トータルDB.${WEEKLY_TOTAL_SUMMARY_RELATION_NAME} → 週次集金DB`);
+          logger.info(`    週次集金DB.${WEEKLY_SUMMARY_TOTAL_RELATION_NAME} → 週次トータルDB`);
         } else if (existingRelation.type !== 'relation') {
           logger.info(`  リレーションに変換予定: ${WEEKLY_TOTAL_SUMMARY_RELATION_NAME} (既存は ${WEEKLY_TOTAL_SUMMARY_RELATION_NAME}_old にリネーム)`);
         } else {
-          logger.info(`  リレーションプロパティ: ${WEEKLY_TOTAL_SUMMARY_RELATION_NAME} (既存)`);
+          logger.info(`  双方向リレーションプロパティ: ${WEEKLY_TOTAL_SUMMARY_RELATION_NAME} ⇔ ${WEEKLY_SUMMARY_TOTAL_RELATION_NAME} (既存)`);
         }
       } else {
-        const relationResult = await ensureRelationProperty(
+        const relationResult = await ensureDualRelationProperty(
           notion,
           config.notion.weeklyTotalDbId,
           WEEKLY_TOTAL_SUMMARY_RELATION_NAME,
           config.notion.weeklySummaryDbId,
+          WEEKLY_SUMMARY_TOTAL_RELATION_NAME,
           false
         );
         if (relationResult.recreated) {
-          logger.success(`  リレーションプロパティを再作成しました: ${WEEKLY_TOTAL_SUMMARY_RELATION_NAME} (参照先DBを修正)`);
+          logger.success(`  双方向リレーションを再作成しました: ${WEEKLY_TOTAL_SUMMARY_RELATION_NAME} ⇔ ${WEEKLY_SUMMARY_TOTAL_RELATION_NAME}`);
         } else if (relationResult.created) {
-          logger.success(`  リレーションプロパティを追加しました: ${WEEKLY_TOTAL_SUMMARY_RELATION_NAME}`);
+          logger.success(`  双方向リレーションを追加しました: ${WEEKLY_TOTAL_SUMMARY_RELATION_NAME} ⇔ ${WEEKLY_SUMMARY_TOTAL_RELATION_NAME}`);
         } else {
-          logger.info(`  リレーションプロパティ: ${WEEKLY_TOTAL_SUMMARY_RELATION_NAME} (既存)`);
+          logger.info(`  双方向リレーションプロパティ: ${WEEKLY_TOTAL_SUMMARY_RELATION_NAME} ⇔ ${WEEKLY_SUMMARY_TOTAL_RELATION_NAME} (既存)`);
         }
       }
     }
