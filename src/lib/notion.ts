@@ -91,6 +91,8 @@ export const WEEKLY_TOTAL_DB_SCHEMA = {
   '総レーキバック': { number: { format: 'yen' } },
   '総エージェントフィー': { number: { format: 'yen' } },
   'ハウス売上': { number: { format: 'yen' } },
+  'ハウスコスト': { number: { format: 'yen' } },
+  'ハウス利益': { number: { format: 'yen' } },
 } as const;
 
 /**
