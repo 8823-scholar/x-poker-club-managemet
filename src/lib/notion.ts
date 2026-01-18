@@ -24,6 +24,7 @@ export const WEEKLY_SUMMARY_DB_SCHEMA = {
   'プレイヤー数': { number: { format: 'number' } },
   'エージェント報酬': { number: { format: 'yen' } },
   '対ハウス精算金額': { number: { format: 'yen' } },
+  '精算済み': { checkbox: {} },
 } as const;
 
 /**
