@@ -554,12 +554,16 @@ async function runSync(
       const grandTotalAgentFee = agentSummaries.reduce((sum, a) => sum + a.agentReward, 0);
       const houseProfit = grandTotalRake - grandTotalRakeback - grandTotalAgentFee;
 
+      // 週次集金のページIDリストを取得
+      const allSummaryPageIds = Array.from(summaryPageIds.values());
+
       const totalData: NotionWeeklyTotalData = {
         weekPeriod: targetPeriod,
         totalRake: Math.floor(grandTotalRake * 100),
         totalRakeback: Math.floor(grandTotalRakeback * 100),
         totalAgentFee: Math.floor(grandTotalAgentFee * 100),
         houseProfit: Math.floor(houseProfit * 100),
+        summaryPageIds: allSummaryPageIds,
       };
 
       const totalResult = await upsertWeeklyTotal(

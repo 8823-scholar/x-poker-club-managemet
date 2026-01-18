@@ -12,6 +12,7 @@ import {
   WEEKLY_SUMMARY_DETAIL_RELATION_NAME,
   WEEKLY_DETAIL_DB_SCHEMA,
   WEEKLY_TOTAL_DB_SCHEMA,
+  WEEKLY_TOTAL_SUMMARY_RELATION_NAME,
 } from '../lib/notion.js';
 import { loadConfig, logger } from '../lib/utils.js';
 
@@ -406,6 +407,39 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
         }
         if (rollupResult.converted.length === 0 && rollupResult.added.length === 0) {
           logger.info('  rollupプロパティは最新です');
+        }
+      }
+    }
+
+    // 7. 週次トータルDBに週次集金DBへのリレーションを追加
+    if (config.notion.weeklyTotalDbId && config.notion.weeklySummaryDbId) {
+      logger.info('週次トータルDB の週次集金リレーションを確認中...');
+
+      const totalProps = await getDatabaseProperties(notion, config.notion.weeklyTotalDbId);
+      const existingRelation = totalProps[WEEKLY_TOTAL_SUMMARY_RELATION_NAME] as { type?: string } | undefined;
+
+      if (options.dryRun) {
+        if (!existingRelation) {
+          logger.info(`  追加予定のリレーション: ${WEEKLY_TOTAL_SUMMARY_RELATION_NAME}`);
+        } else if (existingRelation.type !== 'relation') {
+          logger.info(`  リレーションに変換予定: ${WEEKLY_TOTAL_SUMMARY_RELATION_NAME} (既存は ${WEEKLY_TOTAL_SUMMARY_RELATION_NAME}_old にリネーム)`);
+        } else {
+          logger.info(`  リレーションプロパティ: ${WEEKLY_TOTAL_SUMMARY_RELATION_NAME} (既存)`);
+        }
+      } else {
+        const relationResult = await ensureRelationProperty(
+          notion,
+          config.notion.weeklyTotalDbId,
+          WEEKLY_TOTAL_SUMMARY_RELATION_NAME,
+          config.notion.weeklySummaryDbId,
+          false
+        );
+        if (relationResult.recreated) {
+          logger.success(`  リレーションプロパティを再作成しました: ${WEEKLY_TOTAL_SUMMARY_RELATION_NAME} (参照先DBを修正)`);
+        } else if (relationResult.created) {
+          logger.success(`  リレーションプロパティを追加しました: ${WEEKLY_TOTAL_SUMMARY_RELATION_NAME}`);
+        } else {
+          logger.info(`  リレーションプロパティ: ${WEEKLY_TOTAL_SUMMARY_RELATION_NAME} (既存)`);
         }
       }
     }

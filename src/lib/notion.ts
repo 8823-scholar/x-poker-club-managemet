@@ -94,6 +94,12 @@ export const WEEKLY_TOTAL_DB_SCHEMA = {
 } as const;
 
 /**
+ * 週次トータルDBの週次集金へのリレーション名
+ * ※ migrateで週次集金DBのIDを設定
+ */
+export const WEEKLY_TOTAL_SUMMARY_RELATION_NAME = '週次集金';
+
+/**
  * プレイヤーDBのスキーマ定義
  */
 export const PLAYER_DB_SCHEMA = {
@@ -1062,6 +1068,7 @@ export interface NotionWeeklyTotalData {
   totalRakeback: number;
   totalAgentFee: number;
   houseProfit: number;
+  summaryPageIds?: string[];
 }
 
 /**
@@ -1101,7 +1108,7 @@ export async function upsertWeeklyTotal(
   const existingPageId = await findWeeklyTotal(client, databaseId, data.weekPeriod);
   const { start, end } = parseWeekPeriod(data.weekPeriod);
 
-  const properties = {
+  const properties: Record<string, unknown> = {
     'タイトル': {
       title: [{ text: { content: data.weekPeriod } }],
     },
@@ -1122,17 +1129,24 @@ export async function upsertWeeklyTotal(
     },
   };
 
+  // 週次集金へのリレーションを設定
+  if (data.summaryPageIds && data.summaryPageIds.length > 0) {
+    properties[WEEKLY_TOTAL_SUMMARY_RELATION_NAME] = {
+      relation: data.summaryPageIds.map((id) => ({ id })),
+    };
+  }
+
   if (existingPageId) {
     await client.pages.update({
       page_id: existingPageId,
-      properties,
+      properties: properties as Parameters<typeof client.pages.update>[0]['properties'],
     });
     return { pageId: existingPageId, created: false };
   }
 
   const response = await client.pages.create({
     parent: { database_id: databaseId },
-    properties,
+    properties: properties as Parameters<typeof client.pages.create>[0]['properties'],
   });
   return { pageId: response.id, created: true };
 }
