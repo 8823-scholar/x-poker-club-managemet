@@ -23,7 +23,7 @@ export const WEEKLY_SUMMARY_DB_SCHEMA = {
   'エージェント': { relation: { single_property: {} } },
   'プレイヤー数': { number: { format: 'number' } },
   'エージェント報酬': { number: { format: 'yen' } },
-  'エージェント精算額': { number: { format: 'yen' } },
+  '対ハウス精算金額': { number: { format: 'yen' } },
 } as const;
 
 /**
@@ -49,15 +49,15 @@ export const WEEKLY_SUMMARY_ROLLUP_SCHEMA = {
       function: 'sum',
     },
   },
-  '収益合計': {
+  '成績合計': {
     rollup: {
-      rollup_property_name: '収益',
+      rollup_property_name: '成績',
       function: 'sum',
     },
   },
   '精算金額合計': {
     rollup: {
-      rollup_property_name: '金額',
+      rollup_property_name: '精算金額',
       function: 'sum',
     },
   },
@@ -72,7 +72,7 @@ export const WEEKLY_DETAIL_DB_SCHEMA = {
   '週次集金': { relation: { dual_property: { synced_property_name: '週次集金個別' } } },
   'プレイヤー': { relation: { single_property: {} } },
   'プレイヤーID': { rich_text: {} },
-  '収益': { number: { format: 'yen' } },
+  '成績': { number: { format: 'yen' } },
   'レーキ': { number: { format: 'yen' } },
   'レーキバックレート': { number: { format: 'percent' } },
   'レーキバック': { number: { format: 'yen' } },
@@ -493,7 +493,7 @@ export async function upsertWeeklySummary(
     'エージェント報酬': {
       number: data.agentReward,
     },
-    'エージェント精算額': {
+    '対ハウス精算金額': {
       number: data.settlementAmount,
     },
   };
@@ -704,7 +704,7 @@ export async function upsertWeeklyDetail(
     'プレイヤーID': {
       rich_text: [{ text: { content: data.playerId } }],
     },
-    '収益': {
+    '成績': {
       number: data.revenue,
     },
     'レーキ': {
