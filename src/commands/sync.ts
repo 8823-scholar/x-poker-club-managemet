@@ -285,7 +285,7 @@ async function runSync(
       logger.info(`  総レーキ: ${Math.floor(grandTotalRake * 100)}円`);
       logger.info(`  総レーキバック: ${Math.floor(grandTotalRakeback * 100)}円`);
       logger.info(`  総エージェントフィー: ${Math.floor(grandTotalAgentFee * 100)}円`);
-      logger.info(`  ハウス利益: ${Math.floor(houseProfit * 100)}円`);
+      logger.info(`  ハウス売上: ${Math.floor(houseProfit * 100)}円`);
       logger.info('');
 
       return;

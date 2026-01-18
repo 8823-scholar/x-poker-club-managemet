@@ -90,7 +90,7 @@ export const WEEKLY_TOTAL_DB_SCHEMA = {
   '総レーキ': { number: { format: 'yen' } },
   '総レーキバック': { number: { format: 'yen' } },
   '総エージェントフィー': { number: { format: 'yen' } },
-  'ハウス利益': { number: { format: 'yen' } },
+  'ハウス売上': { number: { format: 'yen' } },
 } as const;
 
 /**
@@ -1129,7 +1129,7 @@ export async function upsertWeeklyTotal(
     '総エージェントフィー': {
       number: data.totalAgentFee,
     },
-    'ハウス利益': {
+    'ハウス売上': {
       number: data.houseProfit,
     },
   };
