@@ -538,6 +538,7 @@ async function runSync(
           playerPageId,
           weeklyTotalPageId,
           playerId: player.playerId,
+          agentId: summary.agentId,
           revenue: Math.floor(player.revenue * 100),
           rake: Math.floor(player.rake * 100),
           rakebackRate: player.rakebackRate,

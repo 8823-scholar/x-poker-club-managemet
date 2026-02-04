@@ -82,6 +82,7 @@ export const WEEKLY_DETAIL_DB_SCHEMA = {
   '週次集金': { relation: { dual_property: { synced_property_name: '週次集金個別' } } },
   'プレイヤー': { relation: { single_property: {} } },
   'プレイヤーID': { rich_text: {} },
+  'エージェントID': { rich_text: {} },
   '成績': { number: { format: 'yen' } },
   'レーキ': { number: { format: 'yen' } },
   'レーキバックレート': { number: { format: 'percent' } },
@@ -695,6 +696,7 @@ export interface NotionWeeklyDetailData {
   playerPageId?: string;
   weeklyTotalPageId?: string;
   playerId: string;
+  agentId: string;
   revenue: number;
   rake: number;
   rakebackRate: number;
@@ -758,6 +760,7 @@ export async function upsertWeeklyDetail(
     'プレイヤー名': pageProps.title(data.nickname),
     '週次集金': pageProps.relation([data.summaryPageId]),
     'プレイヤーID': pageProps.richText(data.playerId),
+    'エージェントID': pageProps.richText(data.agentId),
     '成績': pageProps.number(data.revenue),
     'レーキ': pageProps.number(data.rake),
     'レーキバックレート': pageProps.number(data.rakebackRate),
