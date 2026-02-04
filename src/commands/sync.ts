@@ -215,7 +215,7 @@ async function runSync(
     }
 
     // 7. Notionの既存エージェントを取得
-    const existingAgents = await getAllAgents(notion, config.notion.agentDbId);
+    const existingAgents = await getAllAgents(notion, config.notion.agentDataSourceId);
     logger.info(`Notion既存エージェント: ${existingAgents.size}件`);
 
     // フィーレートはNotionを優先、なければGoogle Sheets、デフォルト0.7
@@ -333,7 +333,7 @@ async function runSync(
     }
 
     // 10. プレイヤーをNotionに同期
-    const existingPlayers = await getAllPlayers(notion, config.notion.playerDbId);
+    const existingPlayers = await getAllPlayers(notion, config.notion.playerDataSourceId);
     logger.info(`Notion既存プレイヤー: ${existingPlayers.size}件`);
 
     let playerCreatedCount = 0;
@@ -412,7 +412,9 @@ async function runSync(
       const result = await upsertWeeklySummary(
         notion,
         config.notion.weeklySummaryDbId,
-        summaryData
+        config.notion.weeklySummaryDataSourceId,
+        summaryData,
+        config.notion.weeklySummaryTemplatePageId
       );
 
       summaryPageIds.set(summary.agentId, result.pageId);
@@ -431,7 +433,7 @@ async function runSync(
     // 12.5. 今回のデータに含まれない週次集金を削除
     const existingSummaries = await getAllWeeklySummariesByPeriod(
       notion,
-      config.notion.weeklySummaryDbId,
+      config.notion.weeklySummaryDataSourceId,
       targetPeriod
     );
     const syncedAgentPageIds = new Set(
@@ -495,6 +497,7 @@ async function runSync(
         const result = await upsertWeeklyDetail(
           notion,
           config.notion.weeklyDetailDbId,
+          config.notion.weeklyDetailDataSourceId,
           detailData
         );
 
@@ -522,7 +525,7 @@ async function runSync(
 
       const existingDetails = await getAllWeeklyDetailsBySummary(
         notion,
-        config.notion.weeklyDetailDbId,
+        config.notion.weeklyDetailDataSourceId,
         summaryPageId
       );
 
@@ -569,6 +572,7 @@ async function runSync(
       const totalResult = await upsertWeeklyTotal(
         notion,
         config.notion.weeklyTotalDbId,
+        config.notion.weeklyTotalDataSourceId,
         totalData
       );
 

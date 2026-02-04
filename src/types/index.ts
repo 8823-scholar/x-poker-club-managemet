@@ -93,5 +93,17 @@ export interface Config {
     weeklyDetailDbId: string;
     /** 週次トータルDBのID */
     weeklyTotalDbId: string;
+    /** エージェントData Source ID */
+    agentDataSourceId: string;
+    /** プレイヤーData Source ID */
+    playerDataSourceId: string;
+    /** 週次集金Data Source ID */
+    weeklySummaryDataSourceId: string;
+    /** 週次集金個別Data Source ID */
+    weeklyDetailDataSourceId: string;
+    /** 週次トータルData Source ID */
+    weeklyTotalDataSourceId: string;
+    /** 週次集金サマリーのテンプレートページID（オプション） */
+    weeklySummaryTemplatePageId?: string;
   };
 }

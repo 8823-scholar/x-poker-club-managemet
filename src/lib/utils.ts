@@ -32,6 +32,12 @@ export function loadConfig(): Config {
           weeklySummaryDbId: process.env.NOTION_WEEKLY_SUMMARY_DB_ID || '',
           weeklyDetailDbId: process.env.NOTION_WEEKLY_DETAIL_DB_ID || '',
           weeklyTotalDbId: process.env.NOTION_WEEKLY_TOTAL_DB_ID || '',
+          agentDataSourceId: process.env.NOTION_AGENT_DATA_SOURCE_ID || '',
+          playerDataSourceId: process.env.NOTION_PLAYER_DATA_SOURCE_ID || '',
+          weeklySummaryDataSourceId: process.env.NOTION_WEEKLY_SUMMARY_DATA_SOURCE_ID || '',
+          weeklyDetailDataSourceId: process.env.NOTION_WEEKLY_DETAIL_DATA_SOURCE_ID || '',
+          weeklyTotalDataSourceId: process.env.NOTION_WEEKLY_TOTAL_DATA_SOURCE_ID || '',
+          weeklySummaryTemplatePageId: process.env.NOTION_WEEKLY_SUMMARY_TEMPLATE_PAGE_ID || undefined,
         }
       : undefined,
   };

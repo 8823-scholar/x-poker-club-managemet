@@ -45,33 +45,33 @@ async function ensureRelationProperty(
 
       // 参照先が異なるのでリネームして再作成
       if (!dryRun) {
-        await client.databases.update({
-          database_id: databaseId,
+        await client.dataSources.update({
+          data_source_id: databaseId,
           properties: {
             [propertyName]: {
               name: `${propertyName}_old`,
             },
-          } as Parameters<typeof client.databases.update>[0]['properties'],
-        });
+          },
+        } as any);
       }
     } else {
       // 別の型で存在する場合はリネーム
       if (!dryRun) {
-        await client.databases.update({
-          database_id: databaseId,
+        await client.dataSources.update({
+          data_source_id: databaseId,
           properties: {
             [propertyName]: {
               name: `${propertyName}_old`,
             },
-          } as Parameters<typeof client.databases.update>[0]['properties'],
-        });
+          },
+        } as any);
       }
     }
   }
 
   if (!dryRun) {
-    await client.databases.update({
-      database_id: databaseId,
+    await client.dataSources.update({
+      data_source_id: databaseId,
       properties: {
         [propertyName]: {
           relation: {
@@ -79,8 +79,8 @@ async function ensureRelationProperty(
             single_property: {},
           },
         },
-      } as Parameters<typeof client.databases.update>[0]['properties'],
-    });
+      },
+    } as any);
   }
 
   const wasRecreated = existingProp?.type === 'relation';
@@ -114,32 +114,32 @@ async function ensureDualRelationProperty(
       }
 
       if (!dryRun) {
-        await client.databases.update({
-          database_id: databaseId,
+        await client.dataSources.update({
+          data_source_id: databaseId,
           properties: {
             [propertyName]: {
               name: `${propertyName}_old`,
             },
-          } as Parameters<typeof client.databases.update>[0]['properties'],
-        });
+          },
+        } as any);
       }
     } else {
       if (!dryRun) {
-        await client.databases.update({
-          database_id: databaseId,
+        await client.dataSources.update({
+          data_source_id: databaseId,
           properties: {
             [propertyName]: {
               name: `${propertyName}_old`,
             },
-          } as Parameters<typeof client.databases.update>[0]['properties'],
-        });
+          },
+        } as any);
       }
     }
   }
 
   if (!dryRun) {
-    await client.databases.update({
-      database_id: databaseId,
+    await client.dataSources.update({
+      data_source_id: databaseId,
       properties: {
         [propertyName]: {
           relation: {
@@ -149,8 +149,8 @@ async function ensureDualRelationProperty(
             },
           },
         },
-      } as unknown as Parameters<typeof client.databases.update>[0]['properties'],
-    });
+      },
+    } as any);
   }
 
   const wasRecreated = existingProp?.type === 'relation';
@@ -175,20 +175,20 @@ async function ensureDetailRelation(
     }
     // 別の型で存在する場合はリネーム
     if (!dryRun) {
-      await client.databases.update({
-        database_id: summaryDbId,
+      await client.dataSources.update({
+        data_source_id: summaryDbId,
         properties: {
           [WEEKLY_SUMMARY_DETAIL_RELATION_NAME]: {
             name: `${WEEKLY_SUMMARY_DETAIL_RELATION_NAME}_old`,
           },
-        } as Parameters<typeof client.databases.update>[0]['properties'],
-      });
+        },
+      } as any);
     }
   }
 
   if (!dryRun) {
-    await client.databases.update({
-      database_id: summaryDbId,
+    await client.dataSources.update({
+      data_source_id: summaryDbId,
       properties: {
         [WEEKLY_SUMMARY_DETAIL_RELATION_NAME]: {
           relation: {
@@ -196,8 +196,8 @@ async function ensureDetailRelation(
             single_property: {},
           },
         },
-      } as Parameters<typeof client.databases.update>[0]['properties'],
-    });
+      },
+    } as any);
   }
 
   return { created: true, existing: false };
@@ -351,12 +351,12 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
         if (options.dryRun) {
           logger.info('週次集金個別DB のプロパティリネーム予定: 集金済み → 精算済み');
         } else {
-          await notion.databases.update({
-            database_id: config.notion.weeklyDetailDbId,
+          await notion.dataSources.update({
+            data_source_id: config.notion.weeklyDetailDataSourceId,
             properties: {
               '集金済み': { name: '精算済み' },
-            } as Parameters<typeof notion.databases.update>[0]['properties'],
-          });
+            },
+          } as any);
           logger.success('週次集金個別DB のプロパティをリネームしました: 集金済み → 精算済み');
         }
       }

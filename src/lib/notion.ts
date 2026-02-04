@@ -1,5 +1,7 @@
 import { Client } from '@notionhq/client';
+import type { BlockObjectRequest, BlockObjectResponse } from '@notionhq/client/build/src/api-endpoints.js';
 import { Config } from '../types/index.js';
+import { logger } from './utils.js';
 
 /**
  * エージェントDBのスキーマ定義
@@ -150,10 +152,10 @@ export function createNotionClient(config: Config): Client {
  */
 export async function getDatabaseProperties(
   client: Client,
-  databaseId: string
+  dataSourceId: string
 ): Promise<Record<string, unknown>> {
-  const response = await client.databases.retrieve({ database_id: databaseId });
-  return (response as { properties: Record<string, unknown> }).properties;
+  const response = await client.dataSources.retrieve({ data_source_id: dataSourceId });
+  return (response as unknown as { properties: Record<string, unknown> }).properties;
 }
 
 /**
@@ -177,11 +179,11 @@ export async function getRelationTargetDatabaseId(
  */
 export async function ensureDatabaseProperties(
   client: Client,
-  databaseId: string,
+  dataSourceId: string,
   requiredSchema: Record<string, unknown>,
   relationDbId?: string
 ): Promise<{ added: string[]; existing: string[]; renamed?: string }> {
-  const existingProps = await getDatabaseProperties(client, databaseId);
+  const existingProps = await getDatabaseProperties(client, dataSourceId);
   const existingNames = new Set(Object.keys(existingProps));
 
   const added: string[] = [];
@@ -209,13 +211,13 @@ export async function ensureDatabaseProperties(
 
   // タイトルプロパティの名前が異なる場合はリネーム
   if (requiredTitleName && existingTitleName && requiredTitleName !== existingTitleName) {
-    await client.databases.update({
-      database_id: databaseId,
+    await client.dataSources.update({
+      data_source_id: dataSourceId,
       properties: {
         [existingTitleName]: {
           name: requiredTitleName,
         },
-      } as Parameters<typeof client.databases.update>[0]['properties'],
+      } as Parameters<typeof client.dataSources.update>[0]['properties'],
     });
     renamed = `${existingTitleName} → ${requiredTitleName}`;
   }
@@ -261,9 +263,9 @@ export async function ensureDatabaseProperties(
   }
 
   if (Object.keys(propertiesToAdd).length > 0) {
-    await client.databases.update({
-      database_id: databaseId,
-      properties: propertiesToAdd as Parameters<typeof client.databases.update>[0]['properties'],
+    await client.dataSources.update({
+      data_source_id: dataSourceId,
+      properties: propertiesToAdd as Parameters<typeof client.dataSources.update>[0]['properties'],
     });
   }
 
@@ -280,11 +282,11 @@ export async function ensureDatabaseProperties(
  */
 export async function ensureRollupProperties(
   client: Client,
-  databaseId: string,
+  dataSourceId: string,
   rollupSchema: Record<string, { rollup: { rollup_property_name: string; function: string } }>,
   relationPropertyName: string
 ): Promise<{ added: string[]; existing: string[]; converted: string[] }> {
-  const existingProps = await getDatabaseProperties(client, databaseId);
+  const existingProps = await getDatabaseProperties(client, dataSourceId);
 
   const added: string[] = [];
   const existing: string[] = [];
@@ -328,17 +330,17 @@ export async function ensureRollupProperties(
 
   // 既存プロパティをリネーム
   if (Object.keys(propertiesToRename).length > 0) {
-    await client.databases.update({
-      database_id: databaseId,
-      properties: propertiesToRename as Parameters<typeof client.databases.update>[0]['properties'],
+    await client.dataSources.update({
+      data_source_id: dataSourceId,
+      properties: propertiesToRename as Parameters<typeof client.dataSources.update>[0]['properties'],
     });
   }
 
   // rollupプロパティを追加
   if (Object.keys(propertiesToAdd).length > 0) {
-    await client.databases.update({
-      database_id: databaseId,
-      properties: propertiesToAdd as Parameters<typeof client.databases.update>[0]['properties'],
+    await client.dataSources.update({
+      data_source_id: dataSourceId,
+      properties: propertiesToAdd as Parameters<typeof client.dataSources.update>[0]['properties'],
     });
   }
 
@@ -361,11 +363,11 @@ export interface NotionAgentData {
  */
 export async function findAgentByAgentId(
   client: Client,
-  databaseId: string,
+  dataSourceId: string,
   agentId: string
 ): Promise<string | null> {
-  const response = await client.databases.query({
-    database_id: databaseId,
+  const response = await client.dataSources.query({
+    data_source_id: dataSourceId,
     filter: {
       property: 'エージェントID',
       rich_text: {
@@ -386,15 +388,15 @@ export async function findAgentByAgentId(
  */
 export async function getAllAgents(
   client: Client,
-  databaseId: string
+  dataSourceId: string
 ): Promise<Map<string, { pageId: string; feeRate: number }>> {
   const agents = new Map<string, { pageId: string; feeRate: number }>();
   let hasMore = true;
   let startCursor: string | undefined;
 
   while (hasMore) {
-    const response = await client.databases.query({
-      database_id: databaseId,
+    const response = await client.dataSources.query({
+      data_source_id: dataSourceId,
       start_cursor: startCursor,
       page_size: 100,
     });
@@ -472,13 +474,13 @@ export interface NotionWeeklySummaryData {
  */
 export async function findWeeklySummary(
   client: Client,
-  databaseId: string,
+  dataSourceId: string,
   weekPeriod: string,
   agentPageId: string
 ): Promise<string | null> {
   const { start } = parseWeekPeriod(weekPeriod);
-  const response = await client.databases.query({
-    database_id: databaseId,
+  const response = await client.dataSources.query({
+    data_source_id: dataSourceId,
     filter: {
       and: [
         {
@@ -506,15 +508,18 @@ export async function findWeeklySummary(
 
 /**
  * 週次集金をNotionに作成または更新
+ * @param templatePageId 新規作成時に適用するテンプレートページID（オプション）
  */
 export async function upsertWeeklySummary(
   client: Client,
   databaseId: string,
-  data: NotionWeeklySummaryData
+  dataSourceId: string,
+  data: NotionWeeklySummaryData,
+  templatePageId?: string
 ): Promise<{ pageId: string; created: boolean }> {
   const existingPageId = await findWeeklySummary(
     client,
-    databaseId,
+    dataSourceId,
     data.weekPeriod,
     data.agentPageId
   );
@@ -549,13 +554,23 @@ export async function upsertWeeklySummary(
       page_id: existingPageId,
       properties,
     });
+
+    // 更新時はテンプレートを再適用しない（Notion APIの制限）
     return { pageId: existingPageId, created: false };
   }
 
+  // 新規作成時にテンプレートを指定
   const response = await client.pages.create({
     parent: { database_id: databaseId },
     properties,
+    ...(templatePageId && {
+      template: {
+        type: 'template_id' as const,
+        template_id: templatePageId,
+      },
+    }),
   });
+
   return { pageId: response.id, created: true };
 }
 
@@ -582,7 +597,7 @@ export async function updateWeeklySummaryDetailRelation(
  */
 export async function getAllWeeklySummariesByPeriod(
   client: Client,
-  databaseId: string,
+  dataSourceId: string,
   weekPeriod: string
 ): Promise<Map<string, string>> {
   const summaries = new Map<string, string>(); // agentPageId -> summaryPageId
@@ -591,8 +606,8 @@ export async function getAllWeeklySummariesByPeriod(
   let startCursor: string | undefined;
 
   while (hasMore) {
-    const response = await client.databases.query({
-      database_id: databaseId,
+    const response = await client.dataSources.query({
+      data_source_id: dataSourceId,
       filter: {
         property: '週期間',
         date: {
@@ -625,7 +640,7 @@ export async function getAllWeeklySummariesByPeriod(
  */
 export async function getAllWeeklyDetailsBySummary(
   client: Client,
-  databaseId: string,
+  dataSourceId: string,
   summaryPageId: string
 ): Promise<Map<string, string>> {
   const details = new Map<string, string>(); // playerId -> detailPageId
@@ -633,8 +648,8 @@ export async function getAllWeeklyDetailsBySummary(
   let startCursor: string | undefined;
 
   while (hasMore) {
-    const response = await client.databases.query({
-      database_id: databaseId,
+    const response = await client.dataSources.query({
+      data_source_id: dataSourceId,
       filter: {
         property: '週次集金',
         relation: {
@@ -695,12 +710,12 @@ export interface NotionWeeklyDetailData {
  */
 export async function findWeeklyDetail(
   client: Client,
-  databaseId: string,
+  dataSourceId: string,
   summaryPageId: string,
   playerId: string
 ): Promise<string | null> {
-  const response = await client.databases.query({
-    database_id: databaseId,
+  const response = await client.dataSources.query({
+    data_source_id: dataSourceId,
     filter: {
       and: [
         {
@@ -732,11 +747,12 @@ export async function findWeeklyDetail(
 export async function upsertWeeklyDetail(
   client: Client,
   databaseId: string,
+  dataSourceId: string,
   data: NotionWeeklyDetailData
 ): Promise<{ pageId: string; created: boolean }> {
   const existingPageId = await findWeeklyDetail(
     client,
-    databaseId,
+    dataSourceId,
     data.summaryPageId,
     data.playerId
   );
@@ -931,15 +947,15 @@ export interface NotionPlayerData {
  */
 export async function getAllPlayers(
   client: Client,
-  databaseId: string
+  dataSourceId: string
 ): Promise<Map<string, string>> {
   const players = new Map<string, string>();
   let hasMore = true;
   let startCursor: string | undefined;
 
   while (hasMore) {
-    const response = await client.databases.query({
-      database_id: databaseId,
+    const response = await client.dataSources.query({
+      data_source_id: dataSourceId,
       start_cursor: startCursor,
       page_size: 100,
     });
@@ -1083,12 +1099,12 @@ export interface NotionWeeklyTotalData {
  */
 async function findWeeklyTotal(
   client: Client,
-  databaseId: string,
+  dataSourceId: string,
   weekPeriod: string
 ): Promise<string | null> {
   const { start } = parseWeekPeriod(weekPeriod);
-  const response = await client.databases.query({
-    database_id: databaseId,
+  const response = await client.dataSources.query({
+    data_source_id: dataSourceId,
     filter: {
       property: '週期間',
       date: {
@@ -1110,9 +1126,10 @@ async function findWeeklyTotal(
 export async function upsertWeeklyTotal(
   client: Client,
   databaseId: string,
+  dataSourceId: string,
   data: NotionWeeklyTotalData
 ): Promise<{ pageId: string; created: boolean }> {
-  const existingPageId = await findWeeklyTotal(client, databaseId, data.weekPeriod);
+  const existingPageId = await findWeeklyTotal(client, dataSourceId, data.weekPeriod);
   const { start, end } = parseWeekPeriod(data.weekPeriod);
 
   const properties: Record<string, unknown> = {
@@ -1156,4 +1173,285 @@ export async function upsertWeeklyTotal(
     properties: properties as Parameters<typeof client.pages.create>[0]['properties'],
   });
   return { pageId: response.id, created: true };
+}
+
+/**
+ * テンプレートページからブロックを取得
+ */
+async function getTemplateBlocks(
+  client: Client,
+  templatePageId: string
+): Promise<BlockObjectResponse[]> {
+  const blocks: BlockObjectResponse[] = [];
+  let hasMore = true;
+  let startCursor: string | undefined;
+
+  while (hasMore) {
+    const response = await client.blocks.children.list({
+      block_id: templatePageId,
+      start_cursor: startCursor,
+      page_size: 100,
+    });
+
+    for (const block of response.results) {
+      if ('type' in block) {
+        blocks.push(block as BlockObjectResponse);
+      }
+    }
+
+    hasMore = response.has_more;
+    startCursor = response.next_cursor ?? undefined;
+  }
+
+  return blocks;
+}
+
+/**
+ * RichTextItemResponseからプレーンテキスト用のRichTextItemRequestに変換
+ */
+function convertRichTextToRequest(richText: { plain_text: string }[]): { type: 'text'; text: { content: string } }[] {
+  return richText.map((item: { plain_text: string }) => ({
+    type: 'text' as const,
+    text: { content: item.plain_text },
+  }));
+}
+
+/**
+ * ブロックをAPI追加用形式に変換
+ * サポート対象: paragraph, heading_1/2/3, bulleted_list_item, numbered_list_item, to_do, toggle, callout, quote, divider, code
+ */
+function convertBlockToRequest(block: BlockObjectResponse): BlockObjectRequest | null {
+  const type = block.type;
+
+  switch (type) {
+    case 'paragraph':
+      return {
+        type: 'paragraph',
+        paragraph: {
+          rich_text: convertRichTextToRequest(block.paragraph.rich_text),
+        },
+      };
+
+    case 'heading_1':
+      return {
+        type: 'heading_1',
+        heading_1: {
+          rich_text: convertRichTextToRequest(block.heading_1.rich_text),
+        },
+      };
+
+    case 'heading_2':
+      return {
+        type: 'heading_2',
+        heading_2: {
+          rich_text: convertRichTextToRequest(block.heading_2.rich_text),
+        },
+      };
+
+    case 'heading_3':
+      return {
+        type: 'heading_3',
+        heading_3: {
+          rich_text: convertRichTextToRequest(block.heading_3.rich_text),
+        },
+      };
+
+    case 'bulleted_list_item':
+      return {
+        type: 'bulleted_list_item',
+        bulleted_list_item: {
+          rich_text: convertRichTextToRequest(block.bulleted_list_item.rich_text),
+        },
+      };
+
+    case 'numbered_list_item':
+      return {
+        type: 'numbered_list_item',
+        numbered_list_item: {
+          rich_text: convertRichTextToRequest(block.numbered_list_item.rich_text),
+        },
+      };
+
+    case 'to_do':
+      return {
+        type: 'to_do',
+        to_do: {
+          rich_text: convertRichTextToRequest(block.to_do.rich_text),
+          checked: block.to_do.checked,
+        },
+      };
+
+    case 'toggle':
+      return {
+        type: 'toggle',
+        toggle: {
+          rich_text: convertRichTextToRequest(block.toggle.rich_text),
+        },
+      };
+
+    case 'callout': {
+      const icon = block.callout.icon;
+      const convertedIcon = icon?.type === 'emoji' ? { type: 'emoji' as const, emoji: icon.emoji } : undefined;
+      return {
+        type: 'callout',
+        callout: {
+          rich_text: convertRichTextToRequest(block.callout.rich_text),
+          icon: convertedIcon,
+        },
+      };
+    }
+
+    case 'quote':
+      return {
+        type: 'quote',
+        quote: {
+          rich_text: convertRichTextToRequest(block.quote.rich_text),
+        },
+      };
+
+    case 'divider':
+      return {
+        type: 'divider',
+        divider: {},
+      };
+
+    case 'code':
+      return {
+        type: 'code',
+        code: {
+          rich_text: convertRichTextToRequest(block.code.rich_text),
+          language: block.code.language,
+        },
+      };
+
+    case 'link_to_page': {
+      // リンクドデータベース（データベースビュー）
+      const linkToPage = block.link_to_page;
+      if (linkToPage.type === 'database_id') {
+        return {
+          type: 'link_to_page',
+          link_to_page: {
+            type: 'database_id',
+            database_id: linkToPage.database_id,
+          },
+        } as BlockObjectRequest;
+      } else if (linkToPage.type === 'page_id') {
+        return {
+          type: 'link_to_page',
+          link_to_page: {
+            type: 'page_id',
+            page_id: linkToPage.page_id,
+          },
+        } as BlockObjectRequest;
+      }
+      return null;
+    }
+
+    case 'child_database':
+      // 子データベースはリンクドデータベースとしてコピー
+      // 元のデータベースIDへのリンクを作成
+      return {
+        type: 'link_to_page',
+        link_to_page: {
+          type: 'database_id',
+          database_id: block.id,
+        },
+      } as BlockObjectRequest;
+
+    default:
+      // サポートされていないブロックタイプはスキップ
+      logger.warn(`サポートされていないブロックタイプをスキップ: ${type}`);
+      return null;
+  }
+}
+
+/**
+ * ページの既存ブロックを全て削除
+ */
+async function deleteAllBlocksFromPage(
+  client: Client,
+  pageId: string
+): Promise<void> {
+  let hasMore = true;
+  let startCursor: string | undefined;
+
+  while (hasMore) {
+    const response = await client.blocks.children.list({
+      block_id: pageId,
+      start_cursor: startCursor,
+      page_size: 100,
+    });
+
+    for (const block of response.results) {
+      if ('id' in block) {
+        await client.blocks.delete({ block_id: block.id });
+      }
+    }
+
+    hasMore = response.has_more;
+    startCursor = response.next_cursor ?? undefined;
+  }
+}
+
+/**
+ * ページにブロックを追加（100件ずつバッチ処理）
+ */
+async function appendBlocksToPage(
+  client: Client,
+  pageId: string,
+  blocks: BlockObjectResponse[]
+): Promise<void> {
+  const requestBlocks: BlockObjectRequest[] = [];
+
+  for (const block of blocks) {
+    const converted = convertBlockToRequest(block);
+    if (converted) {
+      requestBlocks.push(converted);
+    }
+  }
+
+  // 100件ずつバッチで追加
+  const batchSize = 100;
+  for (let i = 0; i < requestBlocks.length; i += batchSize) {
+    const batch = requestBlocks.slice(i, i + batchSize);
+    await client.blocks.children.append({
+      block_id: pageId,
+      children: batch,
+    });
+  }
+}
+
+/**
+ * テンプレートページからブロックをコピーして対象ページに適用
+ * 既存のブロックを削除してからテンプレートを適用（上書き）
+ * テンプレートが見つからない/アクセス権がない場合は警告ログを出力して続行
+ *
+ * @deprecated ページ作成時のtemplate指定を使用するため、この関数は非推奨
+ */
+export async function copyTemplateBlocksToPage(
+  client: Client,
+  templatePageId: string,
+  targetPageId: string
+): Promise<void> {
+  try {
+    const blocks = await getTemplateBlocks(client, templatePageId);
+
+    if (blocks.length === 0) {
+      logger.warn(`テンプレートにブロックがありません: ${templatePageId}`);
+      return;
+    }
+
+    // 既存ブロックを削除
+    await deleteAllBlocksFromPage(client, targetPageId);
+
+    // テンプレートブロックを追加
+    await appendBlocksToPage(client, targetPageId, blocks);
+    logger.info(`テンプレートブロックを適用しました（${blocks.length}ブロック）`);
+  } catch (error) {
+    if (error instanceof Error) {
+      logger.warn(`テンプレートの適用に失敗しました: ${error.message}`);
+    } else {
+      logger.warn('テンプレートの適用に失敗しました');
+    }
+  }
 }
