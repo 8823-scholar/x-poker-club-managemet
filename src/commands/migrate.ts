@@ -11,6 +11,7 @@ import {
   WEEKLY_SUMMARY_ROLLUP_SCHEMA,
   WEEKLY_SUMMARY_DETAIL_RELATION_NAME,
   WEEKLY_DETAIL_DB_SCHEMA,
+  WEEKLY_DETAIL_TOTAL_RELATION_NAME,
   WEEKLY_TOTAL_DB_SCHEMA,
   WEEKLY_TOTAL_SUMMARY_RELATION_NAME,
   WEEKLY_SUMMARY_TOTAL_RELATION_NAME,
@@ -28,6 +29,7 @@ async function ensureRelationProperty(
   client: Client,
   dataSourceId: string,
   propertyName: string,
+  targetDatabaseId: string,
   targetDataSourceId: string,
   dryRun: boolean
 ): Promise<{ created: boolean; existing: boolean; recreated: boolean }> {
@@ -38,7 +40,7 @@ async function ensureRelationProperty(
     if (existingProp.type === 'relation') {
       // リレーション型だが、参照先DBが異なる場合は再作成
       const existingTargetId = existingProp.relation.database_id?.replace(/-/g, '') || '';
-      const expectedTargetId = targetDataSourceId.replace(/-/g, '');
+      const expectedTargetId = targetDatabaseId.replace(/-/g, '');
 
       if (existingTargetId === expectedTargetId) {
         return { created: false, existing: true, recreated: false };
@@ -86,6 +88,7 @@ async function ensureDualRelationProperty(
   client: Client,
   dataSourceId: string,
   propertyName: string,
+  targetDatabaseId: string,
   targetDataSourceId: string,
   syncedPropertyName: string,
   dryRun: boolean
@@ -96,7 +99,7 @@ async function ensureDualRelationProperty(
   if (existingProp) {
     if (existingProp.type === 'relation') {
       const existingTargetId = existingProp.relation.database_id?.replace(/-/g, '') || '';
-      const expectedTargetId = targetDataSourceId.replace(/-/g, '');
+      const expectedTargetId = targetDatabaseId.replace(/-/g, '');
 
       if (existingTargetId === expectedTargetId) {
         return { created: false, existing: true, recreated: false };
@@ -339,7 +342,7 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
     }
 
     // 5. 週次集金個別DBにプレイヤーDBへのリレーションを追加
-    if (config.notion.weeklyDetailDataSourceId && config.notion.playerDataSourceId) {
+    if (config.notion.weeklyDetailDataSourceId && config.notion.playerDbId) {
       logger.info('週次集金個別DB のプレイヤーリレーションを確認中...');
 
       const detailProps = await getDatabaseProperties(notion, config.notion.weeklyDetailDataSourceId);
@@ -353,7 +356,7 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
         } else {
           // 参照先DBを確認
           const existingTargetId = existingPlayerRelation.relation.database_id?.replace(/-/g, '') || '';
-          const expectedTargetId = config.notion.playerDataSourceId.replace(/-/g, '');
+          const expectedTargetId = config.notion.playerDbId.replace(/-/g, '');
           if (existingTargetId !== expectedTargetId) {
             logger.warn('  リレーション再作成予定: プレイヤー (参照先DBが異なるため)');
             logger.warn(`    現在の参照先: ${existingTargetId}`);
@@ -367,6 +370,7 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
           notion,
           config.notion.weeklyDetailDataSourceId,
           'プレイヤー',
+          config.notion.playerDbId,
           config.notion.playerDataSourceId,
           false
         );
@@ -459,7 +463,7 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
     }
 
     // 7. 週次トータルDBと週次集金DBの双方向リレーションを追加
-    if (config.notion.weeklyTotalDataSourceId && config.notion.weeklySummaryDataSourceId) {
+    if (config.notion.weeklyTotalDataSourceId && config.notion.weeklySummaryDbId) {
       logger.info('週次トータルDB ⇔ 週次集金DB の双方向リレーションを確認中...');
 
       const totalProps = await getDatabaseProperties(notion, config.notion.weeklyTotalDataSourceId);
@@ -480,6 +484,7 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
           notion,
           config.notion.weeklyTotalDataSourceId,
           WEEKLY_TOTAL_SUMMARY_RELATION_NAME,
+          config.notion.weeklySummaryDbId,
           config.notion.weeklySummaryDataSourceId,
           WEEKLY_SUMMARY_TOTAL_RELATION_NAME,
           false
@@ -490,6 +495,49 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
           logger.success(`  双方向リレーションを追加しました: ${WEEKLY_TOTAL_SUMMARY_RELATION_NAME} ⇔ ${WEEKLY_SUMMARY_TOTAL_RELATION_NAME}`);
         } else {
           logger.info(`  双方向リレーションプロパティ: ${WEEKLY_TOTAL_SUMMARY_RELATION_NAME} ⇔ ${WEEKLY_SUMMARY_TOTAL_RELATION_NAME} (既存)`);
+        }
+      }
+    }
+
+    // 8. 週次集金個別DBに週次トータルDBへのリレーションを追加
+    if (config.notion.weeklyDetailDataSourceId && config.notion.weeklyTotalDbId) {
+      logger.info('週次集金個別DB → 週次トータルDB のリレーションを確認中...');
+
+      const detailProps = await getDatabaseProperties(notion, config.notion.weeklyDetailDataSourceId);
+      const existingTotalRelation = detailProps[WEEKLY_DETAIL_TOTAL_RELATION_NAME];
+
+      if (options.dryRun) {
+        if (!existingTotalRelation) {
+          logger.info(`  追加予定のリレーション: ${WEEKLY_DETAIL_TOTAL_RELATION_NAME}`);
+        } else if (existingTotalRelation.type !== 'relation') {
+          logger.info(`  リレーションに変換予定: ${WEEKLY_DETAIL_TOTAL_RELATION_NAME} (既存は ${WEEKLY_DETAIL_TOTAL_RELATION_NAME}_old にリネーム)`);
+        } else {
+          // 参照先DBを確認
+          const existingTargetId = existingTotalRelation.relation.database_id?.replace(/-/g, '') || '';
+          const expectedTargetId = config.notion.weeklyTotalDbId.replace(/-/g, '');
+          if (existingTargetId !== expectedTargetId) {
+            logger.warn(`  リレーション再作成予定: ${WEEKLY_DETAIL_TOTAL_RELATION_NAME} (参照先DBが異なるため)`);
+            logger.warn(`    現在の参照先: ${existingTargetId}`);
+            logger.warn(`    正しい参照先: ${expectedTargetId}`);
+          } else {
+            logger.info(`  リレーションプロパティ: ${WEEKLY_DETAIL_TOTAL_RELATION_NAME} (既存)`);
+          }
+        }
+      } else {
+        const totalRelationResult = await ensureRelationProperty(
+          notion,
+          config.notion.weeklyDetailDataSourceId,
+          WEEKLY_DETAIL_TOTAL_RELATION_NAME,
+          config.notion.weeklyTotalDbId,
+          config.notion.weeklyTotalDataSourceId,
+          false
+        );
+        if (totalRelationResult.recreated) {
+          logger.success(`  リレーションプロパティを再作成しました: ${WEEKLY_DETAIL_TOTAL_RELATION_NAME} (参照先DBを修正)`);
+        } else if (totalRelationResult.created) {
+          logger.success(`  リレーションプロパティを追加しました: ${WEEKLY_DETAIL_TOTAL_RELATION_NAME}`);
+        } else {
+          logger.info(`  リレーションプロパティ: ${WEEKLY_DETAIL_TOTAL_RELATION_NAME} (既存)`);
         }
       }
     }

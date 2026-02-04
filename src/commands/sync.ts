@@ -465,6 +465,42 @@ async function runSync(
       logger.info(`週次集金: ${summaryDeletedCount}件削除`);
     }
 
+    // 12.6. 週次トータルを先に作成/取得（週次集金個別のリレーション設定に必要）
+    let weeklyTotalPageId: string | undefined;
+    if (config.notion.weeklyTotalDbId) {
+      const grandTotalRake = collectionData.reduce((sum, row) => sum + row.rake, 0);
+      const grandTotalRakeback = collectionData.reduce((sum, row) => sum + row.rakeback, 0);
+      const grandTotalAgentFee = agentSummaries.reduce((sum, a) => sum + a.agentReward, 0);
+      const houseProfit = grandTotalRake - grandTotalRakeback - grandTotalAgentFee;
+
+      // 週次集金のページIDリストを取得
+      const allSummaryPageIds = Array.from(summaryPageIds.values());
+
+      const totalData: NotionWeeklyTotalData = {
+        weekPeriod: targetPeriod,
+        totalRake: Math.floor(grandTotalRake * 100),
+        totalRakeback: Math.floor(grandTotalRakeback * 100),
+        totalAgentFee: Math.floor(grandTotalAgentFee * 100),
+        houseProfit: Math.floor(houseProfit * 100),
+        summaryPageIds: allSummaryPageIds,
+      };
+
+      const totalResult = await upsertWeeklyTotal(
+        notion,
+        config.notion.weeklyTotalDbId,
+        config.notion.weeklyTotalDataSourceId,
+        totalData
+      );
+
+      weeklyTotalPageId = totalResult.pageId;
+
+      if (totalResult.created) {
+        logger.success('週次トータルを作成しました');
+      } else {
+        logger.success('週次トータルを更新しました');
+      }
+    }
+
     // 13. 週次集金個別をNotionに作成/更新
     let detailCreatedCount = 0;
     let detailUpdatedCount = 0;
@@ -500,6 +536,7 @@ async function runSync(
           nickname: player.playerNickname,
           summaryPageId,
           playerPageId,
+          weeklyTotalPageId,
           playerId: player.playerId,
           revenue: Math.floor(player.revenue * 100),
           rake: Math.floor(player.rake * 100),
@@ -563,40 +600,6 @@ async function runSync(
       }
     }
     logger.success('週次集金の個別リレーションを更新しました');
-
-    // 15. 週次トータルをNotionに同期
-    // ※ 週次集金個別から集計する方式に統一（全プレイヤーを含む）
-    if (config.notion.weeklyTotalDbId) {
-      const grandTotalRake = collectionData.reduce((sum, row) => sum + row.rake, 0);
-      const grandTotalRakeback = collectionData.reduce((sum, row) => sum + row.rakeback, 0);
-      const grandTotalAgentFee = agentSummaries.reduce((sum, a) => sum + a.agentReward, 0);
-      const houseProfit = grandTotalRake - grandTotalRakeback - grandTotalAgentFee;
-
-      // 週次集金のページIDリストを取得
-      const allSummaryPageIds = Array.from(summaryPageIds.values());
-
-      const totalData: NotionWeeklyTotalData = {
-        weekPeriod: targetPeriod,
-        totalRake: Math.floor(grandTotalRake * 100),
-        totalRakeback: Math.floor(grandTotalRakeback * 100),
-        totalAgentFee: Math.floor(grandTotalAgentFee * 100),
-        houseProfit: Math.floor(houseProfit * 100),
-        summaryPageIds: allSummaryPageIds,
-      };
-
-      const totalResult = await upsertWeeklyTotal(
-        notion,
-        config.notion.weeklyTotalDbId,
-        config.notion.weeklyTotalDataSourceId,
-        totalData
-      );
-
-      if (totalResult.created) {
-        logger.success('週次トータルを作成しました');
-      } else {
-        logger.success('週次トータルを更新しました');
-      }
-    }
 
     logger.success('Notion同期が完了しました');
 

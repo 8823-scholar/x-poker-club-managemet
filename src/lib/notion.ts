@@ -116,6 +116,11 @@ export const WEEKLY_TOTAL_SUMMARY_RELATION_NAME = '週次集金';
 export const WEEKLY_SUMMARY_TOTAL_RELATION_NAME = '週次トータル';
 
 /**
+ * 週次集金個別DBの週次トータルへのリレーション名
+ */
+export const WEEKLY_DETAIL_TOTAL_RELATION_NAME = '週次トータル';
+
+/**
  * プレイヤーDBのスキーマ定義
  */
 export const PLAYER_DB_SCHEMA = {
@@ -688,6 +693,7 @@ export interface NotionWeeklyDetailData {
   nickname: string;
   summaryPageId: string;
   playerPageId?: string;
+  weeklyTotalPageId?: string;
   playerId: string;
   revenue: number;
   rake: number;
@@ -762,6 +768,11 @@ export async function upsertWeeklyDetail(
   // プレイヤーリレーションがある場合のみ追加
   if (data.playerPageId) {
     properties['プレイヤー'] = pageProps.relation([data.playerPageId]);
+  }
+
+  // 週次トータルリレーションがある場合のみ追加
+  if (data.weeklyTotalPageId) {
+    properties[WEEKLY_DETAIL_TOTAL_RELATION_NAME] = pageProps.relation([data.weeklyTotalPageId]);
   }
 
   if (existingPageId) {
