@@ -15,6 +15,10 @@ import {
   WEEKLY_TOTAL_SUMMARY_RELATION_NAME,
   WEEKLY_SUMMARY_TOTAL_RELATION_NAME,
 } from '../lib/notion.js';
+import {
+  dataSourceProps,
+  buildDataSourceProperties,
+} from '../lib/notion-builders.js';
 import { loadConfig, logger } from '../lib/utils.js';
 
 /**
@@ -22,22 +26,19 @@ import { loadConfig, logger } from '../lib/utils.js';
  */
 async function ensureRelationProperty(
   client: Client,
-  databaseId: string,
+  dataSourceId: string,
   propertyName: string,
-  targetDbId: string,
+  targetDataSourceId: string,
   dryRun: boolean
 ): Promise<{ created: boolean; existing: boolean; recreated: boolean }> {
-  const existingProps = await getDatabaseProperties(client, databaseId);
-  const existingProp = existingProps[propertyName] as {
-    type?: string;
-    relation?: { database_id?: string };
-  } | undefined;
+  const existingProps = await getDatabaseProperties(client, dataSourceId);
+  const existingProp = existingProps[propertyName];
 
   if (existingProp) {
     if (existingProp.type === 'relation') {
       // リレーション型だが、参照先DBが異なる場合は再作成
-      const existingTargetId = existingProp.relation?.database_id?.replace(/-/g, '') || '';
-      const expectedTargetId = targetDbId.replace(/-/g, '');
+      const existingTargetId = existingProp.relation.database_id?.replace(/-/g, '') || '';
+      const expectedTargetId = targetDataSourceId.replace(/-/g, '');
 
       if (existingTargetId === expectedTargetId) {
         return { created: false, existing: true, recreated: false };
@@ -46,41 +47,32 @@ async function ensureRelationProperty(
       // 参照先が異なるのでリネームして再作成
       if (!dryRun) {
         await client.dataSources.update({
-          data_source_id: databaseId,
-          properties: {
-            [propertyName]: {
-              name: `${propertyName}_old`,
-            },
-          },
-        } as any);
+          data_source_id: dataSourceId,
+          properties: buildDataSourceProperties({
+            [propertyName]: dataSourceProps.rename(`${propertyName}_old`),
+          }),
+        });
       }
     } else {
       // 別の型で存在する場合はリネーム
       if (!dryRun) {
         await client.dataSources.update({
-          data_source_id: databaseId,
-          properties: {
-            [propertyName]: {
-              name: `${propertyName}_old`,
-            },
-          },
-        } as any);
+          data_source_id: dataSourceId,
+          properties: buildDataSourceProperties({
+            [propertyName]: dataSourceProps.rename(`${propertyName}_old`),
+          }),
+        });
       }
     }
   }
 
   if (!dryRun) {
     await client.dataSources.update({
-      data_source_id: databaseId,
-      properties: {
-        [propertyName]: {
-          relation: {
-            database_id: targetDbId,
-            single_property: {},
-          },
-        },
-      },
-    } as any);
+      data_source_id: dataSourceId,
+      properties: buildDataSourceProperties({
+        [propertyName]: dataSourceProps.singleRelation(targetDataSourceId),
+      }),
+    });
   }
 
   const wasRecreated = existingProp?.type === 'relation';
@@ -92,22 +84,19 @@ async function ensureRelationProperty(
  */
 async function ensureDualRelationProperty(
   client: Client,
-  databaseId: string,
+  dataSourceId: string,
   propertyName: string,
-  targetDbId: string,
+  targetDataSourceId: string,
   syncedPropertyName: string,
   dryRun: boolean
 ): Promise<{ created: boolean; existing: boolean; recreated: boolean }> {
-  const existingProps = await getDatabaseProperties(client, databaseId);
-  const existingProp = existingProps[propertyName] as {
-    type?: string;
-    relation?: { database_id?: string };
-  } | undefined;
+  const existingProps = await getDatabaseProperties(client, dataSourceId);
+  const existingProp = existingProps[propertyName];
 
   if (existingProp) {
     if (existingProp.type === 'relation') {
-      const existingTargetId = existingProp.relation?.database_id?.replace(/-/g, '') || '';
-      const expectedTargetId = targetDbId.replace(/-/g, '');
+      const existingTargetId = existingProp.relation.database_id?.replace(/-/g, '') || '';
+      const expectedTargetId = targetDataSourceId.replace(/-/g, '');
 
       if (existingTargetId === expectedTargetId) {
         return { created: false, existing: true, recreated: false };
@@ -115,42 +104,31 @@ async function ensureDualRelationProperty(
 
       if (!dryRun) {
         await client.dataSources.update({
-          data_source_id: databaseId,
-          properties: {
-            [propertyName]: {
-              name: `${propertyName}_old`,
-            },
-          },
-        } as any);
+          data_source_id: dataSourceId,
+          properties: buildDataSourceProperties({
+            [propertyName]: dataSourceProps.rename(`${propertyName}_old`),
+          }),
+        });
       }
     } else {
       if (!dryRun) {
         await client.dataSources.update({
-          data_source_id: databaseId,
-          properties: {
-            [propertyName]: {
-              name: `${propertyName}_old`,
-            },
-          },
-        } as any);
+          data_source_id: dataSourceId,
+          properties: buildDataSourceProperties({
+            [propertyName]: dataSourceProps.rename(`${propertyName}_old`),
+          }),
+        });
       }
     }
   }
 
   if (!dryRun) {
     await client.dataSources.update({
-      data_source_id: databaseId,
-      properties: {
-        [propertyName]: {
-          relation: {
-            database_id: targetDbId,
-            dual_property: {
-              synced_property_name: syncedPropertyName,
-            },
-          },
-        },
-      },
-    } as any);
+      data_source_id: dataSourceId,
+      properties: buildDataSourceProperties({
+        [propertyName]: dataSourceProps.dualRelation(targetDataSourceId, syncedPropertyName),
+      }),
+    });
   }
 
   const wasRecreated = existingProp?.type === 'relation';
@@ -162,12 +140,12 @@ async function ensureDualRelationProperty(
  */
 async function ensureDetailRelation(
   client: Client,
-  summaryDbId: string,
-  detailDbId: string,
+  summaryDataSourceId: string,
+  detailDataSourceId: string,
   dryRun: boolean
 ): Promise<{ created: boolean; existing: boolean }> {
-  const existingProps = await getDatabaseProperties(client, summaryDbId);
-  const existingProp = existingProps[WEEKLY_SUMMARY_DETAIL_RELATION_NAME] as { type?: string } | undefined;
+  const existingProps = await getDatabaseProperties(client, summaryDataSourceId);
+  const existingProp = existingProps[WEEKLY_SUMMARY_DETAIL_RELATION_NAME];
 
   if (existingProp) {
     if (existingProp.type === 'relation') {
@@ -176,28 +154,21 @@ async function ensureDetailRelation(
     // 別の型で存在する場合はリネーム
     if (!dryRun) {
       await client.dataSources.update({
-        data_source_id: summaryDbId,
-        properties: {
-          [WEEKLY_SUMMARY_DETAIL_RELATION_NAME]: {
-            name: `${WEEKLY_SUMMARY_DETAIL_RELATION_NAME}_old`,
-          },
-        },
-      } as any);
+        data_source_id: summaryDataSourceId,
+        properties: buildDataSourceProperties({
+          [WEEKLY_SUMMARY_DETAIL_RELATION_NAME]: dataSourceProps.rename(`${WEEKLY_SUMMARY_DETAIL_RELATION_NAME}_old`),
+        }),
+      });
     }
   }
 
   if (!dryRun) {
     await client.dataSources.update({
-      data_source_id: summaryDbId,
-      properties: {
-        [WEEKLY_SUMMARY_DETAIL_RELATION_NAME]: {
-          relation: {
-            database_id: detailDbId,
-            single_property: {},
-          },
-        },
-      },
-    } as any);
+      data_source_id: summaryDataSourceId,
+      properties: buildDataSourceProperties({
+        [WEEKLY_SUMMARY_DETAIL_RELATION_NAME]: dataSourceProps.singleRelation(detailDataSourceId),
+      }),
+    });
   }
 
   return { created: true, existing: false };
@@ -239,36 +210,41 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
       {
         name: 'エージェントDB',
         id: config.notion.agentDbId,
+        dataSourceId: config.notion.agentDataSourceId,
         schema: AGENT_DB_SCHEMA,
       },
       {
         name: 'プレイヤーDB',
         id: config.notion.playerDbId,
+        dataSourceId: config.notion.playerDataSourceId,
         schema: PLAYER_DB_SCHEMA,
-        relationDbId: config.notion.agentDbId,
+        relationDataSourceId: config.notion.agentDataSourceId,
       },
       {
         name: '週次集金DB',
         id: config.notion.weeklySummaryDbId,
+        dataSourceId: config.notion.weeklySummaryDataSourceId,
         schema: WEEKLY_SUMMARY_DB_SCHEMA,
-        relationDbId: config.notion.agentDbId,
+        relationDataSourceId: config.notion.agentDataSourceId,
       },
       {
         name: '週次集金個別DB',
         id: config.notion.weeklyDetailDbId,
+        dataSourceId: config.notion.weeklyDetailDataSourceId,
         schema: WEEKLY_DETAIL_DB_SCHEMA,
-        relationDbId: config.notion.weeklySummaryDbId,
+        relationDataSourceId: config.notion.weeklySummaryDataSourceId,
       },
       {
         name: '週次トータルDB',
         id: config.notion.weeklyTotalDbId,
+        dataSourceId: config.notion.weeklyTotalDataSourceId,
         schema: WEEKLY_TOTAL_DB_SCHEMA,
       },
     ];
 
     for (const db of databases) {
-      if (!db.id) {
-        logger.warn(`${db.name} のIDが設定されていません。スキップします`);
+      if (!db.dataSourceId) {
+        logger.warn(`${db.name} のDataSource IDが設定されていません。スキップします`);
         continue;
       }
 
@@ -276,7 +252,7 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
 
       if (options.dryRun) {
         // Dry-runモード: 現在のプロパティと必要なプロパティを比較
-        const existingProps = await getDatabaseProperties(notion, db.id);
+        const existingProps = await getDatabaseProperties(notion, db.dataSourceId);
         const existingNames = new Set(Object.keys(existingProps));
 
         // スキーマからタイトルプロパティ名を取得
@@ -323,9 +299,9 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
         // 実際にスキーマを更新
         const result = await ensureDatabaseProperties(
           notion,
-          db.id,
+          db.dataSourceId,
           db.schema,
-          db.relationDbId
+          db.relationDataSourceId
         );
 
         if (result.renamed) {
@@ -342,8 +318,8 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
     }
 
     // 4. 週次集金個別DBの「集金済み」→「精算済み」リネーム
-    if (config.notion.weeklyDetailDbId) {
-      const detailPropsForRename = await getDatabaseProperties(notion, config.notion.weeklyDetailDbId);
+    if (config.notion.weeklyDetailDataSourceId) {
+      const detailPropsForRename = await getDatabaseProperties(notion, config.notion.weeklyDetailDataSourceId);
       const oldSettledProp = detailPropsForRename['集金済み'] as { type?: string } | undefined;
       const newSettledProp = detailPropsForRename['精算済み'] as { type?: string } | undefined;
 
@@ -353,21 +329,21 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
         } else {
           await notion.dataSources.update({
             data_source_id: config.notion.weeklyDetailDataSourceId,
-            properties: {
-              '集金済み': { name: '精算済み' },
-            },
-          } as any);
+            properties: buildDataSourceProperties({
+              '集金済み': dataSourceProps.rename('精算済み'),
+            }),
+          });
           logger.success('週次集金個別DB のプロパティをリネームしました: 集金済み → 精算済み');
         }
       }
     }
 
     // 5. 週次集金個別DBにプレイヤーDBへのリレーションを追加
-    if (config.notion.weeklyDetailDbId && config.notion.playerDbId) {
+    if (config.notion.weeklyDetailDataSourceId && config.notion.playerDataSourceId) {
       logger.info('週次集金個別DB のプレイヤーリレーションを確認中...');
 
-      const detailProps = await getDatabaseProperties(notion, config.notion.weeklyDetailDbId);
-      const existingPlayerRelation = detailProps['プレイヤー'] as { type?: string } | undefined;
+      const detailProps = await getDatabaseProperties(notion, config.notion.weeklyDetailDataSourceId);
+      const existingPlayerRelation = detailProps['プレイヤー'];
 
       if (options.dryRun) {
         if (!existingPlayerRelation) {
@@ -376,8 +352,8 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
           logger.info('  リレーションに変換予定: プレイヤー (既存は プレイヤー_old にリネーム)');
         } else {
           // 参照先DBを確認
-          const existingTargetId = (existingPlayerRelation as { relation?: { database_id?: string } }).relation?.database_id?.replace(/-/g, '') || '';
-          const expectedTargetId = config.notion.playerDbId.replace(/-/g, '');
+          const existingTargetId = existingPlayerRelation.relation.database_id?.replace(/-/g, '') || '';
+          const expectedTargetId = config.notion.playerDataSourceId.replace(/-/g, '');
           if (existingTargetId !== expectedTargetId) {
             logger.warn('  リレーション再作成予定: プレイヤー (参照先DBが異なるため)');
             logger.warn(`    現在の参照先: ${existingTargetId}`);
@@ -389,9 +365,9 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
       } else {
         const playerRelationResult = await ensureRelationProperty(
           notion,
-          config.notion.weeklyDetailDbId,
+          config.notion.weeklyDetailDataSourceId,
           'プレイヤー',
-          config.notion.playerDbId,
+          config.notion.playerDataSourceId,
           false
         );
         if (playerRelationResult.recreated) {
@@ -405,12 +381,12 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
     }
 
     // 6. 週次集金DBに週次集金個別DBへのリレーションとrollupプロパティを追加
-    if (config.notion.weeklySummaryDbId && config.notion.weeklyDetailDbId) {
+    if (config.notion.weeklySummaryDataSourceId && config.notion.weeklyDetailDataSourceId) {
       logger.info('週次集金DB のリレーション・rollupプロパティを確認中...');
 
       // 4.1. 週次集金個別DBへのリレーションを作成
-      const summaryProps = await getDatabaseProperties(notion, config.notion.weeklySummaryDbId);
-      const existingRelation = summaryProps[WEEKLY_SUMMARY_DETAIL_RELATION_NAME] as { type?: string } | undefined;
+      const summaryProps = await getDatabaseProperties(notion, config.notion.weeklySummaryDataSourceId);
+      const existingRelation = summaryProps[WEEKLY_SUMMARY_DETAIL_RELATION_NAME];
 
       if (options.dryRun) {
         if (!existingRelation) {
@@ -423,8 +399,8 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
       } else {
         const relationResult = await ensureDetailRelation(
           notion,
-          config.notion.weeklySummaryDbId,
-          config.notion.weeklyDetailDbId,
+          config.notion.weeklySummaryDataSourceId,
+          config.notion.weeklyDetailDataSourceId,
           false
         );
         if (relationResult.created) {
@@ -440,7 +416,7 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
       const convertRollups: string[] = [];
 
       for (const name of rollupNames) {
-        const existingProp = summaryProps[name] as { type?: string } | undefined;
+        const existingProp = summaryProps[name];
         if (!existingProp) {
           missingRollups.push(name);
         } else if (existingProp.type !== 'rollup') {
@@ -463,7 +439,7 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
       } else {
         const rollupResult = await ensureRollupProperties(
           notion,
-          config.notion.weeklySummaryDbId,
+          config.notion.weeklySummaryDataSourceId,
           WEEKLY_SUMMARY_ROLLUP_SCHEMA,
           WEEKLY_SUMMARY_DETAIL_RELATION_NAME
         );
@@ -483,11 +459,11 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
     }
 
     // 7. 週次トータルDBと週次集金DBの双方向リレーションを追加
-    if (config.notion.weeklyTotalDbId && config.notion.weeklySummaryDbId) {
+    if (config.notion.weeklyTotalDataSourceId && config.notion.weeklySummaryDataSourceId) {
       logger.info('週次トータルDB ⇔ 週次集金DB の双方向リレーションを確認中...');
 
-      const totalProps = await getDatabaseProperties(notion, config.notion.weeklyTotalDbId);
-      const existingRelation = totalProps[WEEKLY_TOTAL_SUMMARY_RELATION_NAME] as { type?: string } | undefined;
+      const totalProps = await getDatabaseProperties(notion, config.notion.weeklyTotalDataSourceId);
+      const existingRelation = totalProps[WEEKLY_TOTAL_SUMMARY_RELATION_NAME];
 
       if (options.dryRun) {
         if (!existingRelation) {
@@ -502,9 +478,9 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
       } else {
         const relationResult = await ensureDualRelationProperty(
           notion,
-          config.notion.weeklyTotalDbId,
+          config.notion.weeklyTotalDataSourceId,
           WEEKLY_TOTAL_SUMMARY_RELATION_NAME,
-          config.notion.weeklySummaryDbId,
+          config.notion.weeklySummaryDataSourceId,
           WEEKLY_SUMMARY_TOTAL_RELATION_NAME,
           false
         );

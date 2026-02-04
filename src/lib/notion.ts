@@ -1,6 +1,13 @@
 import { Client } from '@notionhq/client';
-import type { BlockObjectRequest, BlockObjectResponse } from '@notionhq/client/build/src/api-endpoints.js';
+import type { BlockObjectRequest, BlockObjectResponse, DataSourceObjectResponse } from '@notionhq/client/build/src/api-endpoints.js';
 import { Config } from '../types/index.js';
+import type { DataSourcePropertySchema, DataSourcePropertyValue } from '../types/notion.js';
+import {
+  dataSourceProps,
+  pageProps,
+  buildDataSourceProperties,
+  buildCreatePageProperties,
+} from './notion-builders.js';
 import { logger } from './utils.js';
 
 /**
@@ -153,9 +160,10 @@ export function createNotionClient(config: Config): Client {
 export async function getDatabaseProperties(
   client: Client,
   dataSourceId: string
-): Promise<Record<string, unknown>> {
+): Promise<Record<string, DataSourcePropertySchema>> {
   const response = await client.dataSources.retrieve({ data_source_id: dataSourceId });
-  return (response as unknown as { properties: Record<string, unknown> }).properties;
+  // DataSourceObjectResponseはpropertiesを持つ
+  return (response as DataSourceObjectResponse).properties;
 }
 
 /**
@@ -188,7 +196,7 @@ export async function ensureDatabaseProperties(
 
   const added: string[] = [];
   const existing: string[] = [];
-  const propertiesToAdd: Record<string, unknown> = {};
+  const propertiesToAdd: Record<string, DataSourcePropertyValue> = {};
   let renamed: string | undefined;
 
   // スキーマからタイトルプロパティ名を取得
@@ -213,11 +221,9 @@ export async function ensureDatabaseProperties(
   if (requiredTitleName && existingTitleName && requiredTitleName !== existingTitleName) {
     await client.dataSources.update({
       data_source_id: dataSourceId,
-      properties: {
-        [existingTitleName]: {
-          name: requiredTitleName,
-        },
-      } as Parameters<typeof client.dataSources.update>[0]['properties'],
+      properties: buildDataSourceProperties({
+        [existingTitleName]: dataSourceProps.rename(requiredTitleName),
+      }),
     });
     renamed = `${existingTitleName} → ${requiredTitleName}`;
   }
@@ -239,25 +245,16 @@ export async function ensureDatabaseProperties(
       if (propConfigTyped.relation && relationDbId) {
         if (propConfigTyped.relation.dual_property) {
           // dual_property: 双方向リレーション（逆リレーションも作成）
-          propertiesToAdd[propName] = {
-            relation: {
-              database_id: relationDbId,
-              dual_property: {
-                synced_property_name: propConfigTyped.relation.dual_property.synced_property_name,
-              },
-            },
-          };
+          propertiesToAdd[propName] = dataSourceProps.dualRelation(
+            relationDbId,
+            propConfigTyped.relation.dual_property.synced_property_name
+          );
         } else {
           // single_property: 単方向リレーション
-          propertiesToAdd[propName] = {
-            relation: {
-              database_id: relationDbId,
-              single_property: {},
-            },
-          };
+          propertiesToAdd[propName] = dataSourceProps.singleRelation(relationDbId);
         }
       } else {
-        propertiesToAdd[propName] = propConfig;
+        propertiesToAdd[propName] = propConfig as DataSourcePropertyValue;
       }
     }
   }
@@ -265,7 +262,7 @@ export async function ensureDatabaseProperties(
   if (Object.keys(propertiesToAdd).length > 0) {
     await client.dataSources.update({
       data_source_id: dataSourceId,
-      properties: propertiesToAdd as Parameters<typeof client.dataSources.update>[0]['properties'],
+      properties: propertiesToAdd,
     });
   }
 
@@ -291,11 +288,11 @@ export async function ensureRollupProperties(
   const added: string[] = [];
   const existing: string[] = [];
   const converted: string[] = [];
-  const propertiesToRename: Record<string, unknown> = {};
-  const propertiesToAdd: Record<string, unknown> = {};
+  const propertiesToRename: Record<string, DataSourcePropertyValue> = {};
+  const propertiesToAdd: Record<string, DataSourcePropertyValue> = {};
 
   for (const [propName, propConfig] of Object.entries(rollupSchema)) {
-    const existingProp = existingProps[propName] as { type?: string } | undefined;
+    const existingProp = existingProps[propName];
 
     if (existingProp) {
       if (existingProp.type === 'rollup') {
@@ -304,27 +301,21 @@ export async function ensureRollupProperties(
       } else {
         // 別の型で存在する場合はリネームしてrollupを作成
         converted.push(propName);
-        propertiesToRename[propName] = {
-          name: `${propName}_old`,
-        };
-        propertiesToAdd[propName] = {
-          rollup: {
-            relation_property_name: relationPropertyName,
-            rollup_property_name: propConfig.rollup.rollup_property_name,
-            function: propConfig.rollup.function,
-          },
-        };
+        propertiesToRename[propName] = dataSourceProps.rename(`${propName}_old`);
+        propertiesToAdd[propName] = dataSourceProps.rollup(
+          relationPropertyName,
+          propConfig.rollup.rollup_property_name,
+          propConfig.rollup.function as 'sum'
+        );
       }
     } else {
       // 存在しない場合は新規作成
       added.push(propName);
-      propertiesToAdd[propName] = {
-        rollup: {
-          relation_property_name: relationPropertyName,
-          rollup_property_name: propConfig.rollup.rollup_property_name,
-          function: propConfig.rollup.function,
-        },
-      };
+      propertiesToAdd[propName] = dataSourceProps.rollup(
+        relationPropertyName,
+        propConfig.rollup.rollup_property_name,
+        propConfig.rollup.function as 'sum'
+      );
     }
   }
 
@@ -332,7 +323,7 @@ export async function ensureRollupProperties(
   if (Object.keys(propertiesToRename).length > 0) {
     await client.dataSources.update({
       data_source_id: dataSourceId,
-      properties: propertiesToRename as Parameters<typeof client.dataSources.update>[0]['properties'],
+      properties: propertiesToRename,
     });
   }
 
@@ -340,7 +331,7 @@ export async function ensureRollupProperties(
   if (Object.keys(propertiesToAdd).length > 0) {
     await client.dataSources.update({
       data_source_id: dataSourceId,
-      properties: propertiesToAdd as Parameters<typeof client.dataSources.update>[0]['properties'],
+      properties: propertiesToAdd,
     });
   }
 
@@ -757,49 +748,33 @@ export async function upsertWeeklyDetail(
     data.playerId
   );
 
-  const properties: Record<string, unknown> = {
-    'プレイヤー名': {
-      title: [{ text: { content: data.nickname } }],
-    },
-    '週次集金': {
-      relation: [{ id: data.summaryPageId }],
-    },
-    'プレイヤーID': {
-      rich_text: [{ text: { content: data.playerId } }],
-    },
-    '成績': {
-      number: data.revenue,
-    },
-    'レーキ': {
-      number: data.rake,
-    },
-    'レーキバックレート': {
-      number: data.rakebackRate,
-    },
-    'レーキバック': {
-      number: data.rakeback,
-    },
-    '精算金額': {
-      number: data.amount,
-    },
-  };
+  const properties = buildCreatePageProperties({
+    'プレイヤー名': pageProps.title(data.nickname),
+    '週次集金': pageProps.relation([data.summaryPageId]),
+    'プレイヤーID': pageProps.richText(data.playerId),
+    '成績': pageProps.number(data.revenue),
+    'レーキ': pageProps.number(data.rake),
+    'レーキバックレート': pageProps.number(data.rakebackRate),
+    'レーキバック': pageProps.number(data.rakeback),
+    '精算金額': pageProps.number(data.amount),
+  });
 
   // プレイヤーリレーションがある場合のみ追加
   if (data.playerPageId) {
-    properties['プレイヤー'] = { relation: [{ id: data.playerPageId }] };
+    properties['プレイヤー'] = pageProps.relation([data.playerPageId]);
   }
 
   if (existingPageId) {
     await client.pages.update({
       page_id: existingPageId,
-      properties: properties as Parameters<typeof client.pages.update>[0]['properties'],
+      properties,
     });
     return { pageId: existingPageId, created: false };
   }
 
   const response = await client.pages.create({
     parent: { database_id: databaseId },
-    properties: properties as Parameters<typeof client.pages.create>[0]['properties'],
+    properties,
   });
   return { pageId: response.id, created: true };
 }
@@ -993,42 +968,30 @@ export async function upsertPlayer(
   data: NotionPlayerData,
   existingPageId?: string
 ): Promise<{ pageId: string; created: boolean }> {
-  const properties: Record<string, unknown> = {
-    'ニックネーム': {
-      title: [{ text: { content: data.nickname } }],
-    },
-    'プレイヤーID': {
-      rich_text: [{ text: { content: data.playerId } }],
-    },
-    '国/地域': {
-      rich_text: [{ text: { content: data.country } }],
-    },
-    'リマーク': {
-      rich_text: [{ text: { content: data.remark } }],
-    },
-    'レーキバックレート': {
-      number: data.rakebackRate,
-    },
-  };
+  const properties = buildCreatePageProperties({
+    'ニックネーム': pageProps.title(data.nickname),
+    'プレイヤーID': pageProps.richText(data.playerId),
+    '国/地域': pageProps.richText(data.country),
+    'リマーク': pageProps.richText(data.remark),
+    'レーキバックレート': pageProps.number(data.rakebackRate),
+  });
 
   // エージェントリレーションがある場合のみ追加
   if (data.agentPageId) {
-    properties['エージェント'] = {
-      relation: [{ id: data.agentPageId }],
-    };
+    properties['エージェント'] = pageProps.relation([data.agentPageId]);
   }
 
   if (existingPageId) {
     await client.pages.update({
       page_id: existingPageId,
-      properties: properties as Parameters<typeof client.pages.update>[0]['properties'],
+      properties,
     });
     return { pageId: existingPageId, created: false };
   }
 
   const response = await client.pages.create({
     parent: { database_id: databaseId },
-    properties: properties as Parameters<typeof client.pages.create>[0]['properties'],
+    properties,
   });
   return { pageId: response.id, created: true };
 }
@@ -1132,45 +1095,31 @@ export async function upsertWeeklyTotal(
   const existingPageId = await findWeeklyTotal(client, dataSourceId, data.weekPeriod);
   const { start, end } = parseWeekPeriod(data.weekPeriod);
 
-  const properties: Record<string, unknown> = {
-    'タイトル': {
-      title: [{ text: { content: data.weekPeriod } }],
-    },
-    '週期間': {
-      date: { start, end },
-    },
-    '総レーキ': {
-      number: data.totalRake,
-    },
-    '総レーキバック': {
-      number: data.totalRakeback,
-    },
-    '総エージェントフィー': {
-      number: data.totalAgentFee,
-    },
-    'ハウス売上': {
-      number: data.houseProfit,
-    },
-  };
+  const properties = buildCreatePageProperties({
+    'タイトル': pageProps.title(data.weekPeriod),
+    '週期間': pageProps.date(start, end),
+    '総レーキ': pageProps.number(data.totalRake),
+    '総レーキバック': pageProps.number(data.totalRakeback),
+    '総エージェントフィー': pageProps.number(data.totalAgentFee),
+    'ハウス売上': pageProps.number(data.houseProfit),
+  });
 
   // 週次集金へのリレーションを設定
   if (data.summaryPageIds && data.summaryPageIds.length > 0) {
-    properties[WEEKLY_TOTAL_SUMMARY_RELATION_NAME] = {
-      relation: data.summaryPageIds.map((id) => ({ id })),
-    };
+    properties[WEEKLY_TOTAL_SUMMARY_RELATION_NAME] = pageProps.relation(data.summaryPageIds);
   }
 
   if (existingPageId) {
     await client.pages.update({
       page_id: existingPageId,
-      properties: properties as Parameters<typeof client.pages.update>[0]['properties'],
+      properties,
     });
     return { pageId: existingPageId, created: false };
   }
 
   const response = await client.pages.create({
     parent: { database_id: databaseId },
-    properties: properties as Parameters<typeof client.pages.create>[0]['properties'],
+    properties,
   });
   return { pageId: response.id, created: true };
 }
