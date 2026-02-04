@@ -39,6 +39,15 @@ interface SyncOptions {
 }
 
 /**
+ * ハウスエージェント（エージェントなしのプレイヤー用）
+ */
+const HOUSE_AGENT = {
+  agentId: 'house',
+  agentName: 'ハウス',
+  feeRate: 0, // ハウスはエージェント報酬なし
+} as const;
+
+/**
  * エージェント毎の集計データ
  * ※ Notionでは集計系フィールド（レーキ合計、レーキバック合計、収益合計、金額合計）はrollupで集計
  * ※ totalRake, totalRakeback, totalAmountはエージェント報酬・精算金額の計算に必要なため保持
@@ -65,15 +74,20 @@ function groupCollectionByAgent(
   const agentMap = new Map<string, AgentSyncSummary>();
 
   for (const row of collectionData) {
-    const agentKey = row.agentId || '直接';
+    // エージェントなしの場合は「ハウス」として扱う
+    const agentKey = row.agentId || HOUSE_AGENT.agentId;
+    const isHouseAgent = !row.agentId;
 
     if (!agentMap.has(agentKey)) {
       // フィーレートはNotionから取得、なければGoogle Sheetsのエージェントデータから、デフォルト0.7
-      const feeRate = agentFeeRates.get(row.agentId) ?? 0.7;
+      // ハウスエージェントの場合はフィーレート0
+      const feeRate = isHouseAgent
+        ? HOUSE_AGENT.feeRate
+        : (agentFeeRates.get(row.agentId) ?? 0.7);
 
       agentMap.set(agentKey, {
-        agentId: row.agentId,
-        agentName: row.agentName || '直接',
+        agentId: isHouseAgent ? HOUSE_AGENT.agentId : row.agentId,
+        agentName: isHouseAgent ? HOUSE_AGENT.agentName : (row.agentName || '不明'),
         feeRate,
         players: [],
         totalRake: 0,
@@ -99,19 +113,25 @@ function groupCollectionByAgent(
 
   // エージェント報酬と精算金額を計算
   for (const agent of agentMap.values()) {
-    // エージェント報酬 = (レーキ合計 × フィーレート) - レーキバック合計
-    agent.agentReward =
-      Math.ceil((agent.totalRake * agent.feeRate - agent.totalRakeback) * 100) / 100;
+    // ハウスエージェントの場合はエージェント報酬なし
+    if (agent.agentId === HOUSE_AGENT.agentId) {
+      agent.agentReward = 0;
+      agent.settlementAmount = agent.totalAmount;
+    } else {
+      // エージェント報酬 = (レーキ合計 × フィーレート) - レーキバック合計
+      agent.agentReward =
+        Math.ceil((agent.totalRake * agent.feeRate - agent.totalRakeback) * 100) / 100;
 
-    // 精算金額 = 金額合計 - エージェント報酬 × 100
-    agent.settlementAmount = agent.totalAmount - agent.agentReward * 100;
+      // 精算金額 = 金額合計 - エージェント報酬 × 100
+      agent.settlementAmount = agent.totalAmount - agent.agentReward * 100;
+    }
   }
 
-  // エージェント名でソート（「直接」は最後）
+  // エージェント名でソート（「ハウス」は最後）
   const agents = Array.from(agentMap.values());
   agents.sort((a, b) => {
-    if (a.agentName === '直接') return 1;
-    if (b.agentName === '直接') return -1;
+    if (a.agentId === HOUSE_AGENT.agentId) return 1;
+    if (b.agentId === HOUSE_AGENT.agentId) return -1;
     return a.agentName.localeCompare(b.agentName, 'ja');
   });
 
@@ -297,10 +317,7 @@ async function runSync(
     const agentPageIds = new Map<string, string>();
 
     for (const summary of agentSummaries) {
-      if (!summary.agentId) {
-        continue; // 「直接」のエージェントはスキップ
-      }
-
+      // ハウスエージェントも含めて全エージェントを処理
       const existing = existingAgents.get(summary.agentId);
       if (existing) {
         agentPageIds.set(summary.agentId, existing.pageId);
@@ -386,10 +403,7 @@ async function runSync(
     const summaryPageIds = new Map<string, string>();
 
     for (const summary of agentSummaries) {
-      if (!summary.agentId) {
-        continue; // 「直接」のエージェントはスキップ
-      }
-
+      // ハウスエージェントも含めて全エージェントを処理
       const agentPageId = agentPageIds.get(summary.agentId);
       if (!agentPageId) {
         logger.warn(`エージェントのページIDが見つかりません: ${summary.agentId}`);
@@ -398,7 +412,7 @@ async function runSync(
 
       // ※ 集計系フィールド（レーキ合計、レーキバック合計、収益合計、金額合計）はrollupで自動集計
       // ※ エージェント報酬はpt単位なので円に変換（×100して切り捨て）
-      // ※ タイトルにはリマークがあればリマークを優先
+      // ※ タイトルにはリマークがあればリマークを優先（ハウスエージェントの場合はundefined）
       const sheetsAgent = sheetsAgentData.find((a) => a.agentId === summary.agentId);
       const summaryData: NotionWeeklySummaryData = {
         weekPeriod: targetPeriod,
@@ -457,10 +471,7 @@ async function runSync(
     const summaryDetailPageIds = new Map<string, string[]>();
 
     for (const summary of agentSummaries) {
-      if (!summary.agentId) {
-        continue; // 「直接」のエージェントはスキップ
-      }
-
+      // ハウスエージェントも含めて全エージェントを処理
       const summaryPageId = summaryPageIds.get(summary.agentId);
       if (!summaryPageId) {
         logger.warn(`集金まとめのページIDが見つかりません: ${summary.agentId}`);
@@ -472,12 +483,14 @@ async function runSync(
       for (const player of summary.players) {
         // プレイヤーページIDを取得
         // まずGoogle Sheetsから同期したプレイヤーを検索
-        const playerLookupKey = `${player.playerId}:${summary.agentId || ''}`;
+        // ハウスエージェントの場合は元のagentIdが空なので空文字で検索
+        const originalAgentId = summary.agentId === HOUSE_AGENT.agentId ? '' : summary.agentId;
+        const playerLookupKey = `${player.playerId}:${originalAgentId}`;
         let playerPageId = playerPageIdMap.get(playerLookupKey);
 
         // 見つからない場合はNotionの既存プレイヤーから検索
         if (!playerPageId) {
-          const agentPageId = agentPageIds.get(summary.agentId || '') || '';
+          const agentPageId = agentPageIds.get(summary.agentId) || '';
           const existingPlayerKey = `${player.playerId}:${agentPageId}`;
           playerPageId = existingPlayers.get(existingPlayerKey);
         }
