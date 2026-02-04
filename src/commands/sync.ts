@@ -276,8 +276,9 @@ async function runSync(
       }
 
       // 週次トータルを計算・表示
-      const grandTotalRake = agentSummaries.reduce((sum, a) => sum + a.totalRake, 0);
-      const grandTotalRakeback = agentSummaries.reduce((sum, a) => sum + a.totalRakeback, 0);
+      // ※ 週次集金個別から集計する方式に統一（全プレイヤーを含む）
+      const grandTotalRake = collectionData.reduce((sum, row) => sum + row.rake, 0);
+      const grandTotalRakeback = collectionData.reduce((sum, row) => sum + row.rakeback, 0);
       const grandTotalAgentFee = agentSummaries.reduce((sum, a) => sum + a.agentReward, 0);
       const houseProfit = grandTotalRake - grandTotalRakeback - grandTotalAgentFee;
 
@@ -551,9 +552,10 @@ async function runSync(
     logger.success('週次集金の個別リレーションを更新しました');
 
     // 15. 週次トータルをNotionに同期
+    // ※ 週次集金個別から集計する方式に統一（全プレイヤーを含む）
     if (config.notion.weeklyTotalDbId) {
-      const grandTotalRake = agentSummaries.reduce((sum, a) => sum + a.totalRake, 0);
-      const grandTotalRakeback = agentSummaries.reduce((sum, a) => sum + a.totalRakeback, 0);
+      const grandTotalRake = collectionData.reduce((sum, row) => sum + row.rake, 0);
+      const grandTotalRakeback = collectionData.reduce((sum, row) => sum + row.rakeback, 0);
       const grandTotalAgentFee = agentSummaries.reduce((sum, a) => sum + a.agentReward, 0);
       const houseProfit = grandTotalRake - grandTotalRakeback - grandTotalAgentFee;
 
