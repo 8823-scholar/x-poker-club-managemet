@@ -122,8 +122,8 @@ function groupCollectionByAgent(
       agent.agentReward =
         Math.ceil((agent.totalRake * agent.feeRate - agent.totalRakeback) * 100) / 100;
 
-      // 精算金額 = 金額合計 - エージェント報酬 × 100
-      agent.settlementAmount = agent.totalAmount - agent.agentReward * 100;
+      // 精算金額 = 金額合計 + エージェント報酬 × 100
+      agent.settlementAmount = agent.totalAmount + agent.agentReward * 100;
     }
   }
 
