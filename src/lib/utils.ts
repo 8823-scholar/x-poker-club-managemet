@@ -19,6 +19,9 @@ export function loadConfig(): Config {
     throw new Error('GOOGLE_SPREADSHEET_ID が設定されていません');
   }
 
+  const owner1PlayerId = process.env.HOUSE_OWNER_PLAYER_ID_1 || '';
+  const owner2PlayerId = process.env.HOUSE_OWNER_PLAYER_ID_2 || '';
+
   return {
     google: {
       serviceAccountKey,
@@ -32,13 +35,20 @@ export function loadConfig(): Config {
           weeklySummaryDbId: process.env.NOTION_WEEKLY_SUMMARY_DB_ID || '',
           weeklyDetailDbId: process.env.NOTION_WEEKLY_DETAIL_DB_ID || '',
           weeklyTotalDbId: process.env.NOTION_WEEKLY_TOTAL_DB_ID || '',
+          monthlySummaryDbId: process.env.NOTION_MONTHLY_SUMMARY_DB_ID || '',
+          costDbId: process.env.NOTION_COST_DB_ID || '',
           agentDataSourceId: process.env.NOTION_AGENT_DATA_SOURCE_ID || '',
           playerDataSourceId: process.env.NOTION_PLAYER_DATA_SOURCE_ID || '',
           weeklySummaryDataSourceId: process.env.NOTION_WEEKLY_SUMMARY_DATA_SOURCE_ID || '',
           weeklyDetailDataSourceId: process.env.NOTION_WEEKLY_DETAIL_DATA_SOURCE_ID || '',
           weeklyTotalDataSourceId: process.env.NOTION_WEEKLY_TOTAL_DATA_SOURCE_ID || '',
+          monthlySummaryDataSourceId: process.env.NOTION_MONTHLY_SUMMARY_DATA_SOURCE_ID || '',
+          costDataSourceId: process.env.NOTION_COST_DATA_SOURCE_ID || '',
           weeklySummaryTemplatePageId: process.env.NOTION_WEEKLY_SUMMARY_TEMPLATE_PAGE_ID || undefined,
         }
+      : undefined,
+    houseOwners: (owner1PlayerId && owner2PlayerId)
+      ? { owner1PlayerId, owner2PlayerId }
       : undefined,
   };
 }

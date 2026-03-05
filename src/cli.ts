@@ -4,6 +4,7 @@ import { createImportCommand } from './commands/import.js';
 import { createCollectCommand } from './commands/collect.js';
 import { createMigrateCommand } from './commands/migrate.js';
 import { createSyncCommand } from './commands/sync.js';
+import { createMonthlyCommand } from './commands/monthly.js';
 
 const program = new Command();
 
@@ -17,5 +18,6 @@ program.addCommand(createImportCommand());
 program.addCommand(createCollectCommand());
 program.addCommand(createMigrateCommand());
 program.addCommand(createSyncCommand());
+program.addCommand(createMonthlyCommand());
 
 program.parse();

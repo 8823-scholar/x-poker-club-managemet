@@ -93,6 +93,10 @@ export interface Config {
     weeklyDetailDbId: string;
     /** 週次トータルDBのID */
     weeklyTotalDbId: string;
+    /** 月次集計DBのID */
+    monthlySummaryDbId: string;
+    /** コストDBのID */
+    costDbId: string;
     /** エージェントData Source ID */
     agentDataSourceId: string;
     /** プレイヤーData Source ID */
@@ -103,7 +107,18 @@ export interface Config {
     weeklyDetailDataSourceId: string;
     /** 週次トータルData Source ID */
     weeklyTotalDataSourceId: string;
+    /** 月次集計Data Source ID */
+    monthlySummaryDataSourceId: string;
+    /** コストData Source ID */
+    costDataSourceId: string;
     /** 週次集金サマリーのテンプレートページID（オプション） */
     weeklySummaryTemplatePageId?: string;
+  };
+  /** ハウスオーナー設定 */
+  houseOwners?: {
+    /** オーナー1のプレイヤーID */
+    owner1PlayerId: string;
+    /** オーナー2のプレイヤーID */
+    owner2PlayerId: string;
   };
 }
