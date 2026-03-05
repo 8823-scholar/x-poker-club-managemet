@@ -15,6 +15,14 @@ import {
   WEEKLY_TOTAL_DB_SCHEMA,
   WEEKLY_TOTAL_SUMMARY_RELATION_NAME,
   WEEKLY_SUMMARY_TOTAL_RELATION_NAME,
+  MONTHLY_SUMMARY_DB_SCHEMA,
+  MONTHLY_SUMMARY_WEEKLY_TOTAL_RELATION_NAME,
+  MONTHLY_SUMMARY_OWNER1_DETAIL_RELATION_NAME,
+  MONTHLY_SUMMARY_OWNER2_DETAIL_RELATION_NAME,
+  COST_DB_SCHEMA,
+  COST_MONTHLY_RELATION_NAME,
+  MONTHLY_SUMMARY_COST_RELATION_NAME,
+  COST_PLAYER_RELATION_NAME,
 } from '../lib/notion.js';
 import {
   dataSourceProps,
@@ -242,6 +250,18 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
         id: config.notion.weeklyTotalDbId,
         dataSourceId: config.notion.weeklyTotalDataSourceId,
         schema: WEEKLY_TOTAL_DB_SCHEMA,
+      },
+      {
+        name: '月次集計DB',
+        id: config.notion.monthlySummaryDbId,
+        dataSourceId: config.notion.monthlySummaryDataSourceId,
+        schema: MONTHLY_SUMMARY_DB_SCHEMA,
+      },
+      {
+        name: 'コストDB',
+        id: config.notion.costDbId,
+        dataSourceId: config.notion.costDataSourceId,
+        schema: COST_DB_SCHEMA,
       },
     ];
 
@@ -538,6 +558,132 @@ async function runMigrate(options: MigrateOptions): Promise<void> {
           logger.success(`  リレーションプロパティを追加しました: ${WEEKLY_DETAIL_TOTAL_RELATION_NAME}`);
         } else {
           logger.info(`  リレーションプロパティ: ${WEEKLY_DETAIL_TOTAL_RELATION_NAME} (既存)`);
+        }
+      }
+    }
+
+    // 9. 月次集計DB → 週次トータルDBのリレーションを追加
+    if (config.notion.monthlySummaryDataSourceId && config.notion.weeklyTotalDbId) {
+      logger.info('月次集計DB → 週次トータルDB のリレーションを確認中...');
+
+      if (options.dryRun) {
+        const monthlyProps = await getDatabaseProperties(notion, config.notion.monthlySummaryDataSourceId);
+        const existingRelation = monthlyProps[MONTHLY_SUMMARY_WEEKLY_TOTAL_RELATION_NAME];
+        if (!existingRelation) {
+          logger.info(`  追加予定のリレーション: ${MONTHLY_SUMMARY_WEEKLY_TOTAL_RELATION_NAME}`);
+        } else {
+          logger.info(`  リレーションプロパティ: ${MONTHLY_SUMMARY_WEEKLY_TOTAL_RELATION_NAME} (既存)`);
+        }
+      } else {
+        const result = await ensureRelationProperty(
+          notion,
+          config.notion.monthlySummaryDataSourceId,
+          MONTHLY_SUMMARY_WEEKLY_TOTAL_RELATION_NAME,
+          config.notion.weeklyTotalDbId,
+          config.notion.weeklyTotalDataSourceId,
+          false
+        );
+        if (result.created) {
+          logger.success(`  リレーションプロパティを追加しました: ${MONTHLY_SUMMARY_WEEKLY_TOTAL_RELATION_NAME}`);
+        } else {
+          logger.info(`  リレーションプロパティ: ${MONTHLY_SUMMARY_WEEKLY_TOTAL_RELATION_NAME} (既存)`);
+        }
+      }
+    }
+
+    // 10. 月次集計DB → 週次集金個別DB のオーナーリレーション × 2 を追加
+    if (config.notion.monthlySummaryDataSourceId && config.notion.weeklyDetailDbId) {
+      const ownerRelations = [
+        MONTHLY_SUMMARY_OWNER1_DETAIL_RELATION_NAME,
+        MONTHLY_SUMMARY_OWNER2_DETAIL_RELATION_NAME,
+      ];
+
+      for (const relationName of ownerRelations) {
+        logger.info(`月次集計DB → 週次集金個別DB のリレーションを確認中... (${relationName})`);
+
+        if (options.dryRun) {
+          const monthlyProps = await getDatabaseProperties(notion, config.notion.monthlySummaryDataSourceId);
+          const existingRelation = monthlyProps[relationName];
+          if (!existingRelation) {
+            logger.info(`  追加予定のリレーション: ${relationName}`);
+          } else {
+            logger.info(`  リレーションプロパティ: ${relationName} (既存)`);
+          }
+        } else {
+          const result = await ensureRelationProperty(
+            notion,
+            config.notion.monthlySummaryDataSourceId,
+            relationName,
+            config.notion.weeklyDetailDbId,
+            config.notion.weeklyDetailDataSourceId,
+            false
+          );
+          if (result.created) {
+            logger.success(`  リレーションプロパティを追加しました: ${relationName}`);
+          } else {
+            logger.info(`  リレーションプロパティ: ${relationName} (既存)`);
+          }
+        }
+      }
+    }
+
+    // 11. コストDB → プレイヤーDBのリレーションを追加（支払者）
+    if (config.notion.costDataSourceId && config.notion.playerDbId) {
+      logger.info('コストDB → プレイヤーDB のリレーションを確認中... (支払者)');
+
+      if (options.dryRun) {
+        const costProps = await getDatabaseProperties(notion, config.notion.costDataSourceId);
+        const existingRelation = costProps[COST_PLAYER_RELATION_NAME];
+        if (!existingRelation) {
+          logger.info(`  追加予定のリレーション: ${COST_PLAYER_RELATION_NAME}`);
+        } else {
+          logger.info(`  リレーションプロパティ: ${COST_PLAYER_RELATION_NAME} (既存)`);
+        }
+      } else {
+        const result = await ensureRelationProperty(
+          notion,
+          config.notion.costDataSourceId,
+          COST_PLAYER_RELATION_NAME,
+          config.notion.playerDbId,
+          config.notion.playerDataSourceId,
+          false
+        );
+        if (result.created) {
+          logger.success(`  リレーションプロパティを追加しました: ${COST_PLAYER_RELATION_NAME}`);
+        } else {
+          logger.info(`  リレーションプロパティ: ${COST_PLAYER_RELATION_NAME} (既存)`);
+        }
+      }
+    }
+
+    // 12. コストDB → 月次集計DBの双方向リレーションを追加
+    if (config.notion.costDataSourceId && config.notion.monthlySummaryDbId) {
+      logger.info('コストDB ⇔ 月次集計DB の双方向リレーションを確認中...');
+
+      if (options.dryRun) {
+        const costProps = await getDatabaseProperties(notion, config.notion.costDataSourceId);
+        const existingRelation = costProps[COST_MONTHLY_RELATION_NAME];
+        if (!existingRelation) {
+          logger.info(`  追加予定の双方向リレーション:`);
+          logger.info(`    コストDB.${COST_MONTHLY_RELATION_NAME} → 月次集計DB`);
+          logger.info(`    月次集計DB.${MONTHLY_SUMMARY_COST_RELATION_NAME} → コストDB`);
+        } else {
+          logger.info(`  双方向リレーションプロパティ: ${COST_MONTHLY_RELATION_NAME} ⇔ ${MONTHLY_SUMMARY_COST_RELATION_NAME} (既存)`);
+        }
+      } else {
+        const result = await ensureDualRelationProperty(
+          notion,
+          config.notion.costDataSourceId,
+          COST_MONTHLY_RELATION_NAME,
+          config.notion.monthlySummaryDbId,
+          config.notion.monthlySummaryDataSourceId,
+          MONTHLY_SUMMARY_COST_RELATION_NAME,
+          false
+        );
+        if (result.created) {
+          logger.success(`  双方向リレーションを追加しました: ${COST_MONTHLY_RELATION_NAME} ⇔ ${MONTHLY_SUMMARY_COST_RELATION_NAME}`);
+        } else {
+          logger.info(`  双方向リレーションプロパティ: ${COST_MONTHLY_RELATION_NAME} ⇔ ${MONTHLY_SUMMARY_COST_RELATION_NAME} (既存)`);
         }
       }
     }

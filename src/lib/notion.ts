@@ -106,6 +106,63 @@ export const WEEKLY_TOTAL_DB_SCHEMA = {
 } as const;
 
 /**
+ * 月次集計DBのスキーマ定義
+ */
+export const MONTHLY_SUMMARY_DB_SCHEMA = {
+  'タイトル': { title: {} },
+  '月期間': { date: {} },
+  '対象週数': { number: { format: 'number' } },
+  '総レーキ': { number: { format: 'yen' } },
+  '総レーキバック': { number: { format: 'yen' } },
+  '総エージェントフィー': { number: { format: 'yen' } },
+  'ハウス売上': { number: { format: 'yen' } },
+  'コスト合計': { number: { format: 'yen' } },
+  '最終利益': { number: { format: 'yen' } },
+  'オーナー分配額': { number: { format: 'yen' } },
+  'のすけコスト': { number: { format: 'yen' } },
+  'せいさんコスト': { number: { format: 'yen' } },
+  'のすけ最終精算': { number: { format: 'yen' } },
+  'せいさん最終精算': { number: { format: 'yen' } },
+} as const;
+
+/**
+ * 月次集計DBの週次トータルへのリレーション名
+ */
+export const MONTHLY_SUMMARY_WEEKLY_TOTAL_RELATION_NAME = '週次トータル';
+
+/**
+ * 月次集計DBのオーナー週次データリレーション名
+ */
+export const MONTHLY_SUMMARY_OWNER1_DETAIL_RELATION_NAME = 'のすけ週次データ';
+export const MONTHLY_SUMMARY_OWNER2_DETAIL_RELATION_NAME = 'せいさん週次データ';
+
+/**
+ * コストDBのスキーマ定義
+ */
+export const COST_DB_SCHEMA = {
+  'タイトル': { title: {} },
+  '金額': { number: { format: 'yen' } },
+  'カテゴリ': { select: { options: [{ name: 'ダイヤモンド購入' }, { name: 'その他' }] } },
+  '日付': { date: {} },
+  'メモ': { rich_text: {} },
+} as const;
+
+/**
+ * コストDBの支払者へのリレーション名（→ プレイヤーDB）
+ */
+export const COST_PLAYER_RELATION_NAME = '支払者';
+
+/**
+ * コストDBの月次集計へのリレーション名（dual relation）
+ */
+export const COST_MONTHLY_RELATION_NAME = '月次集計';
+
+/**
+ * 月次集計DBのコストへのリレーション名（逆リレーション）
+ */
+export const MONTHLY_SUMMARY_COST_RELATION_NAME = 'コスト';
+
+/**
  * 週次トータルDBの週次集金へのリレーション名
  * ※ migrateで週次集金DBのIDを設定
  */
@@ -1136,6 +1193,402 @@ export async function upsertWeeklyTotal(
     properties,
   });
   return { pageId: response.id, created: true };
+}
+
+/**
+ * 週次トータルのデータ型（月次集計用）
+ */
+export interface WeeklyTotalRecord {
+  pageId: string;
+  weekPeriod: string;
+  totalRake: number;
+  totalRakeback: number;
+  totalAgentFee: number;
+  houseRevenue: number;
+}
+
+/**
+ * 週次トータルページからデータを抽出するヘルパー
+ */
+function extractWeeklyTotalFromPage(page: Record<string, unknown>): WeeklyTotalRecord | null {
+  if (!('properties' in page)) return null;
+  const props = (page as { properties: Record<string, unknown> }).properties;
+
+  const weekPeriodProp = props['週期間'] as { date?: { start?: string; end?: string } } | undefined;
+  const totalRakeProp = props['総レーキ'] as { number?: number | null } | undefined;
+  const totalRakebackProp = props['総レーキバック'] as { number?: number | null } | undefined;
+  const totalAgentFeeProp = props['総エージェントフィー'] as { number?: number | null } | undefined;
+  const houseRevenueProp = props['ハウス売上'] as { number?: number | null } | undefined;
+
+  const start = weekPeriodProp?.date?.start;
+  const end = weekPeriodProp?.date?.end;
+  if (!start) return null;
+
+  return {
+    pageId: (page as { id: string }).id,
+    weekPeriod: end ? `${start}〜${end}` : start,
+    totalRake: totalRakeProp?.number ?? 0,
+    totalRakeback: totalRakebackProp?.number ?? 0,
+    totalAgentFee: totalAgentFeeProp?.number ?? 0,
+    houseRevenue: houseRevenueProp?.number ?? 0,
+  };
+}
+
+/**
+ * 最新n件の週次トータルを日付降順で取得
+ */
+export async function getLatestWeeklyTotals(
+  client: Client,
+  dataSourceId: string,
+  count: number
+): Promise<WeeklyTotalRecord[]> {
+  const results: WeeklyTotalRecord[] = [];
+  let hasMore = true;
+  let startCursor: string | undefined;
+
+  while (hasMore && results.length < count) {
+    const response = await client.dataSources.query({
+      data_source_id: dataSourceId,
+      sorts: [{ property: '週期間', direction: 'descending' }],
+      start_cursor: startCursor,
+      page_size: Math.min(count - results.length, 100),
+    });
+
+    for (const page of response.results) {
+      const record = extractWeeklyTotalFromPage(page as Record<string, unknown>);
+      if (record) {
+        results.push(record);
+        if (results.length >= count) break;
+      }
+    }
+
+    hasMore = response.has_more;
+    startCursor = response.next_cursor ?? undefined;
+  }
+
+  return results;
+}
+
+/**
+ * 日付範囲で週次トータルを取得
+ */
+export async function getWeeklyTotalsByDateRange(
+  client: Client,
+  dataSourceId: string,
+  startDate: string,
+  endDate: string
+): Promise<WeeklyTotalRecord[]> {
+  const results: WeeklyTotalRecord[] = [];
+  let hasMore = true;
+  let startCursor: string | undefined;
+
+  while (hasMore) {
+    const response = await client.dataSources.query({
+      data_source_id: dataSourceId,
+      filter: {
+        and: [
+          {
+            property: '週期間',
+            date: { on_or_after: startDate },
+          },
+          {
+            property: '週期間',
+            date: { on_or_before: endDate },
+          },
+        ],
+      },
+      sorts: [{ property: '週期間', direction: 'ascending' }],
+      start_cursor: startCursor,
+      page_size: 100,
+    });
+
+    for (const page of response.results) {
+      const record = extractWeeklyTotalFromPage(page as Record<string, unknown>);
+      if (record) {
+        results.push(record);
+      }
+    }
+
+    hasMore = response.has_more;
+    startCursor = response.next_cursor ?? undefined;
+  }
+
+  return results;
+}
+
+/**
+ * コストデータの型
+ */
+/**
+ * プレイヤーIDからNotionページIDを取得
+ */
+export async function getPlayerPageIdByPlayerId(
+  client: Client,
+  dataSourceId: string,
+  playerId: string
+): Promise<string | null> {
+  const response = await client.dataSources.query({
+    data_source_id: dataSourceId,
+    filter: {
+      property: 'プレイヤーID',
+      rich_text: { equals: playerId },
+    },
+    page_size: 1,
+  });
+
+  if (response.results.length > 0) {
+    return response.results[0].id;
+  }
+  return null;
+}
+
+export interface CostRecord {
+  pageId: string;
+  title: string;
+  amount: number;
+  date: string;
+  /** 支払者のNotionページID（1人） */
+  payerPageId: string | null;
+}
+
+/**
+ * 日付範囲内のコストを取得
+ */
+export async function getCostsByDateRange(
+  client: Client,
+  dataSourceId: string,
+  startDate: string,
+  endDate: string
+): Promise<CostRecord[]> {
+  const results: CostRecord[] = [];
+  let hasMore = true;
+  let startCursor: string | undefined;
+
+  while (hasMore) {
+    const response = await client.dataSources.query({
+      data_source_id: dataSourceId,
+      filter: {
+        and: [
+          {
+            property: '日付',
+            date: { on_or_after: startDate },
+          },
+          {
+            property: '日付',
+            date: { on_or_before: endDate },
+          },
+        ],
+      },
+      start_cursor: startCursor,
+      page_size: 100,
+    });
+
+    for (const page of response.results) {
+      if (!('properties' in page)) continue;
+      const props = page.properties as Record<string, unknown>;
+
+      const titleProp = props['タイトル'] as { title?: { plain_text: string }[] } | undefined;
+      const amountProp = props['金額'] as { number?: number | null } | undefined;
+      const dateProp = props['日付'] as { date?: { start?: string } } | undefined;
+      const payerProp = props[COST_PLAYER_RELATION_NAME] as { relation?: { id: string }[] } | undefined;
+
+      results.push({
+        pageId: page.id,
+        title: titleProp?.title?.[0]?.plain_text || '',
+        amount: amountProp?.number ?? 0,
+        date: dateProp?.date?.start || '',
+        payerPageId: payerProp?.relation?.[0]?.id ?? null,
+      });
+    }
+
+    hasMore = response.has_more;
+    startCursor = response.next_cursor ?? undefined;
+  }
+
+  return results;
+}
+
+/**
+ * オーナー週次集計結果の型
+ */
+export interface OwnerWeeklySummary {
+  pageIds: string[];
+  totalRevenue: number;
+  totalRakeback: number;
+}
+
+/**
+ * 特定プレイヤーの週次集金個別データを週次トータルリレーション経由で取得・集計
+ */
+export async function getOwnerWeeklySummaryByTotals(
+  client: Client,
+  dataSourceId: string,
+  weeklyTotalPageIds: string[],
+  playerId: string
+): Promise<OwnerWeeklySummary> {
+  const pageIds: string[] = [];
+  let totalRevenue = 0;
+  let totalRakeback = 0;
+
+  for (const totalPageId of weeklyTotalPageIds) {
+    let hasMore = true;
+    let startCursor: string | undefined;
+
+    while (hasMore) {
+      const response = await client.dataSources.query({
+        data_source_id: dataSourceId,
+        filter: {
+          and: [
+            {
+              property: WEEKLY_DETAIL_TOTAL_RELATION_NAME,
+              relation: { contains: totalPageId },
+            },
+            {
+              property: 'プレイヤーID',
+              rich_text: { equals: playerId },
+            },
+          ],
+        },
+        start_cursor: startCursor,
+        page_size: 100,
+      });
+
+      for (const page of response.results) {
+        pageIds.push(page.id);
+        if (!('properties' in page)) continue;
+        const props = page.properties as Record<string, unknown>;
+        const revenueProp = props['成績'] as { number?: number | null } | undefined;
+        const rakebackProp = props['レーキバック'] as { number?: number | null } | undefined;
+        totalRevenue += revenueProp?.number ?? 0;
+        totalRakeback += rakebackProp?.number ?? 0;
+      }
+
+      hasMore = response.has_more;
+      startCursor = response.next_cursor ?? undefined;
+    }
+  }
+
+  return { pageIds, totalRevenue, totalRakeback };
+}
+
+/**
+ * 月次集計データの型（Notion用）
+ */
+export interface NotionMonthlySummaryData {
+  title: string;
+  periodStart: string;
+  periodEnd: string;
+  weekCount: number;
+  totalRake: number;
+  totalRakeback: number;
+  totalAgentFee: number;
+  houseRevenue: number;
+  totalCost: number;
+  finalProfit: number;
+  ownerShare: number;
+  owner1Cost: number;
+  owner2Cost: number;
+  owner1FinalSettlement: number;
+  owner2FinalSettlement: number;
+  weeklyTotalPageIds: string[];
+  owner1DetailPageIds: string[];
+  owner2DetailPageIds: string[];
+  costPageIds: string[];
+}
+
+/**
+ * 月次集計を月期間の開始日で検索
+ */
+async function findMonthlySummary(
+  client: Client,
+  dataSourceId: string,
+  periodStart: string
+): Promise<string | null> {
+  const response = await client.dataSources.query({
+    data_source_id: dataSourceId,
+    filter: {
+      property: '月期間',
+      date: { equals: periodStart },
+    },
+    page_size: 1,
+  });
+
+  if (response.results.length > 0) {
+    return response.results[0].id;
+  }
+  return null;
+}
+
+/**
+ * 月次集計をNotionに作成または更新
+ */
+export async function upsertMonthlySummary(
+  client: Client,
+  databaseId: string,
+  dataSourceId: string,
+  data: NotionMonthlySummaryData
+): Promise<{ pageId: string; created: boolean }> {
+  const existingPageId = await findMonthlySummary(client, dataSourceId, data.periodStart);
+
+  const properties = buildCreatePageProperties({
+    'タイトル': pageProps.title(data.title),
+    '月期間': pageProps.date(data.periodStart, data.periodEnd),
+    '対象週数': pageProps.number(data.weekCount),
+    '総レーキ': pageProps.number(data.totalRake),
+    '総レーキバック': pageProps.number(data.totalRakeback),
+    '総エージェントフィー': pageProps.number(data.totalAgentFee),
+    'ハウス売上': pageProps.number(data.houseRevenue),
+    'コスト合計': pageProps.number(data.totalCost),
+    '最終利益': pageProps.number(data.finalProfit),
+    'オーナー分配額': pageProps.number(data.ownerShare),
+    'のすけコスト': pageProps.number(data.owner1Cost),
+    'せいさんコスト': pageProps.number(data.owner2Cost),
+    'のすけ最終精算': pageProps.number(data.owner1FinalSettlement),
+    'せいさん最終精算': pageProps.number(data.owner2FinalSettlement),
+  });
+
+  // リレーション設定
+  if (data.weeklyTotalPageIds.length > 0) {
+    properties[MONTHLY_SUMMARY_WEEKLY_TOTAL_RELATION_NAME] = pageProps.relation(data.weeklyTotalPageIds);
+  }
+  if (data.owner1DetailPageIds.length > 0) {
+    properties[MONTHLY_SUMMARY_OWNER1_DETAIL_RELATION_NAME] = pageProps.relation(data.owner1DetailPageIds);
+  }
+  if (data.owner2DetailPageIds.length > 0) {
+    properties[MONTHLY_SUMMARY_OWNER2_DETAIL_RELATION_NAME] = pageProps.relation(data.owner2DetailPageIds);
+  }
+
+  if (existingPageId) {
+    await client.pages.update({
+      page_id: existingPageId,
+      properties,
+    });
+    return { pageId: existingPageId, created: false };
+  }
+
+  const response = await client.pages.create({
+    parent: { database_id: databaseId },
+    properties,
+  });
+  return { pageId: response.id, created: true };
+}
+
+/**
+ * コストページの月次集計リレーションを更新
+ */
+export async function updateCostMonthlyRelation(
+  client: Client,
+  costPageId: string,
+  monthlySummaryPageId: string
+): Promise<void> {
+  await client.pages.update({
+    page_id: costPageId,
+    properties: {
+      [COST_MONTHLY_RELATION_NAME]: {
+        relation: [{ id: monthlySummaryPageId }],
+      },
+    },
+  });
 }
 
 /**
