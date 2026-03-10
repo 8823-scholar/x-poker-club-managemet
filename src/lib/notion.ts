@@ -1871,3 +1871,292 @@ export async function copyTemplateBlocksToPage(
     }
   }
 }
+
+/**
+ * NotionのURLまたはページIDからページIDを抽出
+ * 対応形式:
+ * - https://www.notion.so/xxx/Page-Title-abcdef1234567890abcdef1234567890
+ * - https://www.notion.so/abcdef1234567890abcdef1234567890
+ * - 32文字hex文字列
+ * - UUID形式（ハイフン付き）
+ */
+export function parseNotionPageUrl(url: string): string {
+  // UUID形式（ハイフン付き）
+  const uuidMatch = url.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+  if (uuidMatch) {
+    return uuidMatch[1];
+  }
+
+  // 32文字hex（URLの末尾またはそのまま）
+  const hexMatch = url.match(/([0-9a-f]{32})/i);
+  if (hexMatch) {
+    const hex = hexMatch[1];
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+
+  throw new Error(`NotionページIDを抽出できません: ${url}`);
+}
+
+/**
+ * ステーキング対象のプレイヤーID
+ */
+const STAKING_PLAYER_ID = '3323054';
+
+/**
+ * ステーキング精算に必要なプロパティ
+ */
+export interface WeeklyDetailPageProperties {
+  playerName: string;
+  seiseki: number;
+  rakeback: number;
+  seisanKingaku: number;
+}
+
+/**
+ * 週次集金個別ページから直接プロパティを取得
+ */
+function extractDetailPageProps(props: any): WeeklyDetailPageProperties {
+  return {
+    playerName: props['プレイヤー名']?.title?.[0]?.plain_text || '',
+    seiseki: props['成績']?.number ?? 0,
+    rakeback: props['レーキバック']?.number ?? 0,
+    seisanKingaku: props['精算金額']?.number ?? 0,
+  };
+}
+
+/**
+ * ページからステーキング精算に必要なプロパティを取得
+ * - 週次集金個別ページ: そのままプロパティを読む
+ * - 週次集金ページ: 対ハウス精算金額はページから、成績・レーキバックはちひろくん本人の週次集金個別から取得
+ */
+export async function getWeeklyDetailPageProperties(
+  client: Client,
+  pageId: string
+): Promise<WeeklyDetailPageProperties> {
+  const page = await client.pages.retrieve({ page_id: pageId }) as any;
+  const props = page.properties;
+
+  // 週次集金個別ページの場合はそのまま返す
+  if ('成績' in props) {
+    return extractDetailPageProps(props);
+  }
+
+  // 週次集金ページ: 対ハウス精算金額を取得
+  const seisanKingaku = props['対ハウス精算金額']?.number ?? 0;
+  const playerName = props['タイトル']?.title?.[0]?.plain_text || '';
+
+  // 週次集金個別リレーションからちひろくん本人のレコードを探す
+  const detailRelation = props['週次集金個別']?.relation as { id: string }[] | undefined;
+  if (!detailRelation || detailRelation.length === 0) {
+    throw new Error('週次集金個別のリレーションが見つかりません');
+  }
+
+  for (const rel of detailRelation) {
+    const detailPage = await client.pages.retrieve({ page_id: rel.id }) as any;
+    const detailProps = detailPage.properties;
+    const pid = detailProps['プレイヤーID']?.rich_text?.[0]?.plain_text || '';
+    if (pid === STAKING_PLAYER_ID) {
+      logger.info(`ステーキング対象プレイヤーを特定: ${detailProps['プレイヤー名']?.title?.[0]?.plain_text || ''} (${pid})`);
+      return {
+        playerName,
+        seiseki: detailProps['成績']?.number ?? 0,
+        rakeback: detailProps['レーキバック']?.number ?? 0,
+        seisanKingaku,
+      };
+    }
+  }
+
+  throw new Error(`プレイヤーID ${STAKING_PLAYER_ID} の週次集金個別が見つかりません`);
+}
+
+/**
+ * ステーキング精算の計算結果
+ */
+export interface StakingCalculation {
+  /** 対ハウス精算（精算金額そのまま） */
+  houseSettlement: number;
+  /** のすけステーキング（成績 × 50%、切り捨て） */
+  nosukeStaking: number;
+  /** のすけレーキバック（レーキバック × 30%、切り捨て） */
+  nosukeRakeback: number;
+  /** 最終精算 */
+  finalSettlement: number;
+  /** 元の成績 */
+  seiseki: number;
+  /** 元のレーキバック */
+  rakeback: number;
+}
+
+/**
+ * ステーキング精算を計算
+ * - のすけステーキング = -(成績 × 0.5) を Math.floor で切り捨て
+ * - のすけレーキバック = -(レーキバック × 0.3) を Math.floor で切り捨て
+ * - 最終精算 = 対ハウス精算 + のすけステーキング + のすけレーキバック
+ */
+export function calculateStaking(seisanKingaku: number, seiseki: number, rakeback: number): StakingCalculation {
+  const houseSettlement = seisanKingaku;
+  const nosukeStaking = -Math.floor(seiseki * 0.5);
+  const nosukeRakeback = -Math.floor(rakeback * 0.3);
+  const finalSettlement = houseSettlement + nosukeStaking + nosukeRakeback;
+
+  return {
+    houseSettlement,
+    nosukeStaking,
+    nosukeRakeback,
+    finalSettlement,
+    seiseki,
+    rakeback,
+  };
+}
+
+/**
+ * 既存のステーキング精算ブロックを削除（冪等性確保）
+ * divider → heading_2「ステーキング精算」→ table のパターンを検索して削除
+ */
+export async function deleteStakingBlocks(client: Client, pageId: string): Promise<void> {
+  const blocks: { id: string; type: string; text?: string }[] = [];
+  let hasMore = true;
+  let startCursor: string | undefined;
+
+  while (hasMore) {
+    const response = await client.blocks.children.list({
+      block_id: pageId,
+      start_cursor: startCursor,
+      page_size: 100,
+    });
+
+    for (const block of response.results) {
+      if ('type' in block) {
+        const b = block as BlockObjectResponse;
+        let text: string | undefined;
+        if (b.type === 'heading_2') {
+          text = (b.heading_2 as any).rich_text?.[0]?.plain_text || '';
+        }
+        blocks.push({ id: b.id, type: b.type, text });
+      }
+    }
+
+    hasMore = response.has_more;
+    startCursor = response.next_cursor ?? undefined;
+  }
+
+  // 「ステーキング精算」heading_2を探し、その前のdividerと後のtableを削除
+  const idsToDelete: string[] = [];
+  for (let i = 0; i < blocks.length; i++) {
+    if (blocks[i].type === 'heading_2' && blocks[i].text === 'ステーキング精算') {
+      // 前のdividerを削除
+      if (i > 0 && blocks[i - 1].type === 'divider') {
+        idsToDelete.push(blocks[i - 1].id);
+      }
+      // heading自身を削除
+      idsToDelete.push(blocks[i].id);
+      // 後のtableを削除
+      if (i + 1 < blocks.length && blocks[i + 1].type === 'table') {
+        idsToDelete.push(blocks[i + 1].id);
+      }
+    }
+  }
+
+  for (const id of idsToDelete) {
+    await client.blocks.delete({ block_id: id });
+  }
+
+  if (idsToDelete.length > 0) {
+    logger.info(`既存のステーキング精算ブロックを削除しました（${idsToDelete.length}件）`);
+  }
+}
+
+/**
+ * 金額をフォーマット（¥付き、カンマ区切り）
+ */
+function formatYen(amount: number): string {
+  const prefix = amount < 0 ? '-¥' : '¥';
+  return `${prefix}${Math.abs(amount).toLocaleString()}`;
+}
+
+/**
+ * テーブルのリッチテキストセル
+ */
+function textCell(content: string): { type: 'text'; text: { content: string } }[] {
+  return [{ type: 'text' as const, text: { content } }];
+}
+
+/**
+ * ステーキング精算のブロックをNotionページに追記
+ */
+export async function appendStakingBlocks(
+  client: Client,
+  pageId: string,
+  calc: StakingCalculation
+): Promise<void> {
+  const children: BlockObjectRequest[] = [
+    { type: 'divider', divider: {} },
+    {
+      type: 'heading_2',
+      heading_2: {
+        rich_text: [{ type: 'text', text: { content: 'ステーキング精算' } }],
+      },
+    },
+    {
+      type: 'table',
+      table: {
+        table_width: 3,
+        has_column_header: true,
+        has_row_header: false,
+        children: [
+          {
+            type: 'table_row',
+            table_row: {
+              cells: [textCell('項目'), textCell('金額'), textCell('詳細')],
+            },
+          },
+          {
+            type: 'table_row',
+            table_row: {
+              cells: [
+                textCell('対ハウス精算'),
+                textCell(formatYen(calc.houseSettlement)),
+                textCell(''),
+              ],
+            },
+          },
+          {
+            type: 'table_row',
+            table_row: {
+              cells: [
+                textCell('のすけステーキング'),
+                textCell(formatYen(calc.nosukeStaking)),
+                textCell(`${formatYen(calc.seiseki)} × 50%`),
+              ],
+            },
+          },
+          {
+            type: 'table_row',
+            table_row: {
+              cells: [
+                textCell('のすけレーキバック'),
+                textCell(formatYen(calc.nosukeRakeback)),
+                textCell(`${formatYen(calc.rakeback)} × 30%`),
+              ],
+            },
+          },
+          {
+            type: 'table_row',
+            table_row: {
+              cells: [
+                textCell('最終精算'),
+                textCell(formatYen(calc.finalSettlement)),
+                textCell(''),
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ];
+
+  await client.blocks.children.append({
+    block_id: pageId,
+    children,
+  });
+}

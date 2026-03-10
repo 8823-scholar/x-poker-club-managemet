@@ -5,6 +5,7 @@ import { createCollectCommand } from './commands/collect.js';
 import { createMigrateCommand } from './commands/migrate.js';
 import { createSyncCommand } from './commands/sync.js';
 import { createMonthlyCommand } from './commands/monthly.js';
+import { createStakingCommand } from './commands/staking.js';
 
 const program = new Command();
 
@@ -19,5 +20,6 @@ program.addCommand(createCollectCommand());
 program.addCommand(createMigrateCommand());
 program.addCommand(createSyncCommand());
 program.addCommand(createMonthlyCommand());
+program.addCommand(createStakingCommand());
 
 program.parse();
