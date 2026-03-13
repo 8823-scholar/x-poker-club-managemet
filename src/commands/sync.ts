@@ -36,6 +36,7 @@ interface SyncOptions {
   agentSheet?: string;
   playerSheet?: string;
   dryRun?: boolean;
+  chipRate?: number;
 }
 
 /**
@@ -69,7 +70,8 @@ interface AgentSyncSummary {
  */
 function groupCollectionByAgent(
   collectionData: CollectionDataRow[],
-  agentFeeRates: Map<string, number>
+  agentFeeRates: Map<string, number>,
+  chipRate: number
 ): AgentSyncSummary[] {
   const agentMap = new Map<string, AgentSyncSummary>();
 
@@ -122,8 +124,8 @@ function groupCollectionByAgent(
       agent.agentReward =
         Math.ceil((agent.totalRake * agent.feeRate - agent.totalRakeback) * 100) / 100;
 
-      // 精算金額 = 金額合計 + エージェント報酬 × 100
-      agent.settlementAmount = agent.totalAmount + agent.agentReward * 100;
+      // 精算金額 = 金額合計 + エージェント報酬 × チップレート
+      agent.settlementAmount = agent.totalAmount + agent.agentReward * chipRate;
     }
   }
 
@@ -250,7 +252,9 @@ async function runSync(
     }
 
     // 8. 集金データをエージェント毎にグループ化
-    const agentSummaries = groupCollectionByAgent(collectionData, agentFeeRates);
+    const chipRate = options.chipRate ?? 1000;
+    logger.info(`チップレート: 1チップ = ${chipRate}円`);
+    const agentSummaries = groupCollectionByAgent(collectionData, agentFeeRates, chipRate);
     logger.info(`エージェント数: ${agentSummaries.length}グループ`);
 
     // Dry-runモードの場合は結果を表示して終了
@@ -656,6 +660,7 @@ export function createSyncCommand(): Command {
       'プレイヤーデータ'
     )
     .option('--dry-run', 'Notionに書き込まずに同期内容を表示')
+    .option('--chip-rate <number>', 'チップレート（1チップあたりの円換算、デフォルト: 1000）', Number)
     .action(async (weekPeriod: string | undefined, options: SyncOptions) => {
       await runSync(weekPeriod, options);
     });

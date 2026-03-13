@@ -18,6 +18,7 @@ interface CollectOptions {
   sourceSheet?: string;
   targetSheet?: string;
   dryRun?: boolean;
+  chipRate?: number;
 }
 
 /**
@@ -45,7 +46,8 @@ interface AgentSummary {
  */
 function groupByAgent(
   players: WeeklyPlayerData[],
-  rakebackRates: Map<string, number>
+  rakebackRates: Map<string, number>,
+  chipRate: number
 ): AgentSummary[] {
   const agentMap = new Map<string, AgentSummary>();
 
@@ -78,8 +80,8 @@ function groupByAgent(
     const rakebackCents = Math.ceil(clubRakeCents * rakebackRate);
     const rakeback = rakebackCents / 100;
 
-    // 金額 = (収益 + レーキバック) × 100
-    const revenueYen = (revenuePoints + rakeback) * 100;
+    // 金額 = (収益 + レーキバック) × チップレート
+    const revenueYen = (revenuePoints + rakeback) * chipRate;
 
     agent.players.push({
       nickname: player.nickname,
@@ -211,7 +213,9 @@ async function runCollect(
     logger.info(`レーキバックレート登録数: ${rakebackRates.size}件`);
 
     // 7. エージェント毎にグループ化
-    const agents = groupByAgent(weeklyData, rakebackRates);
+    const chipRate = options.chipRate ?? 1000;
+    logger.info(`チップレート: 1チップ = ${chipRate}円`);
+    const agents = groupByAgent(weeklyData, rakebackRates, chipRate);
     logger.info(`エージェント数: ${agents.length}グループ`);
 
     // 8. 集金データを生成
@@ -280,6 +284,7 @@ export function createCollectCommand(): Command {
       '集金データ'
     )
     .option('--dry-run', 'スプレッドシートに書き込まずに結果を表示')
+    .option('--chip-rate <number>', 'チップレート（1チップあたりの円換算、デフォルト: 1000）', Number)
     .action(async (weekPeriod: string | undefined, options: CollectOptions) => {
       await runCollect(weekPeriod, options);
     });
