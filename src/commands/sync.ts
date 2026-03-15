@@ -280,9 +280,9 @@ async function runSync(
         logger.info(`【${agent.agentName}】(${agent.agentId || 'ID無し'})`);
         logger.info(`  フィーレート: ${(agent.feeRate * 100).toFixed(0)}%`);
         logger.info(`  プレイヤー数: ${agent.players.length}名`);
-        logger.info(`  レーキ合計: ${Math.floor(agent.totalRake * 100)}円 ※Notionではrollupで集計`);
-        logger.info(`  レーキバック合計: ${Math.floor(agent.totalRakeback * 100)}円 ※Notionではrollupで集計`);
-        logger.info(`  エージェント報酬: ${Math.floor(agent.agentReward * 100)}円`);
+        logger.info(`  レーキ合計: ${Math.floor(agent.totalRake * chipRate)}円 ※Notionではrollupで集計`);
+        logger.info(`  レーキバック合計: ${Math.floor(agent.totalRakeback * chipRate)}円 ※Notionではrollupで集計`);
+        logger.info(`  エージェント報酬: ${Math.floor(agent.agentReward * chipRate)}円`);
         logger.info(`  金額合計: ${Math.floor(agent.totalAmount)}円 ※Notionではrollupで集計`);
         logger.info(`  精算金額: ${Math.floor(agent.settlementAmount)}円`);
         logger.info('');
@@ -290,10 +290,10 @@ async function runSync(
         for (const player of agent.players) {
           const rakebackInfo =
             player.rakebackRate > 0
-              ? ` [RB: ${Math.floor(player.rakeback * 100)}円 (${(player.rakebackRate * 100).toFixed(0)}%)]`
+              ? ` [RB: ${Math.floor(player.rakeback * chipRate)}円 (${(player.rakebackRate * 100).toFixed(0)}%)]`
               : '';
           logger.info(
-            `    ${player.playerNickname} (${player.playerId}): 収益${Math.floor(player.revenue * 100)}円 / レーキ${Math.floor(player.rake * 100)}円${rakebackInfo} / ${Math.floor(player.amount)}円`
+            `    ${player.playerNickname} (${player.playerId}): 収益${Math.floor(player.revenue * chipRate)}円 / レーキ${Math.floor(player.rake * chipRate)}円${rakebackInfo} / ${Math.floor(player.amount)}円`
           );
         }
         logger.info('');
@@ -307,10 +307,10 @@ async function runSync(
       const houseProfit = grandTotalRake - grandTotalRakeback - grandTotalAgentFee;
 
       logger.info('=== 週次トータル ===');
-      logger.info(`  総レーキ: ${Math.floor(grandTotalRake * 100)}円`);
-      logger.info(`  総レーキバック: ${Math.floor(grandTotalRakeback * 100)}円`);
-      logger.info(`  総エージェントフィー: ${Math.floor(grandTotalAgentFee * 100)}円`);
-      logger.info(`  ハウス売上: ${Math.floor(houseProfit * 100)}円`);
+      logger.info(`  総レーキ: ${Math.floor(grandTotalRake * chipRate)}円`);
+      logger.info(`  総レーキバック: ${Math.floor(grandTotalRakeback * chipRate)}円`);
+      logger.info(`  総エージェントフィー: ${Math.floor(grandTotalAgentFee * chipRate)}円`);
+      logger.info(`  ハウス売上: ${Math.floor(houseProfit * chipRate)}円`);
       logger.info('');
 
       return;
@@ -415,7 +415,7 @@ async function runSync(
       }
 
       // ※ 集計系フィールド（レーキ合計、レーキバック合計、収益合計、金額合計）はrollupで自動集計
-      // ※ エージェント報酬はpt単位なので円に変換（×100して切り捨て）
+      // ※ エージェント報酬はpt単位なので円に変換（×chipRateして切り捨て）
       // ※ タイトルにはリマークがあればリマークを優先（ハウスエージェントの場合はundefined）
       const sheetsAgent = sheetsAgentData.find((a) => a.agentId === summary.agentId);
       const summaryData: NotionWeeklySummaryData = {
@@ -424,7 +424,7 @@ async function runSync(
         agentRemark: sheetsAgent?.remark || undefined,
         agentPageId,
         playerCount: summary.players.length,
-        agentReward: Math.floor(summary.agentReward * 100),
+        agentReward: Math.floor(summary.agentReward * chipRate),
         settlementAmount: summary.settlementAmount,
       };
 
@@ -482,10 +482,10 @@ async function runSync(
 
       const totalData: NotionWeeklyTotalData = {
         weekPeriod: targetPeriod,
-        totalRake: Math.floor(grandTotalRake * 100),
-        totalRakeback: Math.floor(grandTotalRakeback * 100),
-        totalAgentFee: Math.floor(grandTotalAgentFee * 100),
-        houseProfit: Math.floor(houseProfit * 100),
+        totalRake: Math.floor(grandTotalRake * chipRate),
+        totalRakeback: Math.floor(grandTotalRakeback * chipRate),
+        totalAgentFee: Math.floor(grandTotalAgentFee * chipRate),
+        houseProfit: Math.floor(houseProfit * chipRate),
         summaryPageIds: allSummaryPageIds,
       };
 
@@ -535,7 +535,7 @@ async function runSync(
           playerPageId = existingPlayers.get(existingPlayerKey);
         }
 
-        // 収益・レーキ・レーキバックはpt単位なので円に変換（×100して切り捨て）
+        // 収益・レーキ・レーキバックはpt単位なので円に変換（×chipRateして切り捨て）
         const detailData: NotionWeeklyDetailData = {
           nickname: player.playerNickname,
           summaryPageId,
@@ -543,10 +543,10 @@ async function runSync(
           weeklyTotalPageId,
           playerId: player.playerId,
           agentId: summary.agentId,
-          revenue: Math.floor(player.revenue * 100),
-          rake: Math.floor(player.rake * 100),
+          revenue: Math.floor(player.revenue * chipRate),
+          rake: Math.floor(player.rake * chipRate),
           rakebackRate: player.rakebackRate,
-          rakeback: Math.floor(player.rakeback * 100),
+          rakeback: Math.floor(player.rakeback * chipRate),
           amount: player.amount,
         };
 
